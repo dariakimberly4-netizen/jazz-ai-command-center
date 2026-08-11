@@ -1,69 +1,70 @@
 # Jazz AI — WhatsApp Fallback Setup
 
-This adds the rule:
+This is the active phone-friendly setup for Jazz.
 
-**9:00 AM Manila time:** Jazz gives Kimmy the daily report when the Command Center is visibly open.
+**9:00 AM Asia/Manila:** if the Jazz Command Center is open, Jazz shows and speaks the daily report.
 
-**About 9:15 AM:** if Jazz has not seen Kimmy online that morning, the private backend sends the daily fallback through WhatsApp.
+**9:15–9:29 AM:** if the private backend has not seen Jazz online since 9:00 AM, it sends one WhatsApp fallback report.
 
 ## Security rule
 
-Never paste a Meta access token into `index.html`, `whatsapp-fallback-client.js`, GitHub Pages, or any other public repository file.
+Never paste a Meta access token into `index.html`, `whatsapp-fallback-client.js`, GitHub Pages, or any public repository file.
 
-The Meta token, sender phone-number ID, and receiving WhatsApp number belong only in **Google Apps Script → Project Settings → Script properties**.
+The Meta token, sender phone-number ID, receiving WhatsApp number, and private Jazz key belong only in **Google Apps Script → Project Settings → Script properties**.
 
 ## What you need
 
 1. A Meta Developer app with WhatsApp Cloud API / WhatsApp Business Platform configured.
-2. A WhatsApp Business API sender number in Meta.
+2. A WhatsApp Business sender number in Meta.
 3. Kimmy's receiving WhatsApp number in international digits, for example `639XXXXXXXXX`.
 4. An approved WhatsApp message template, for example `jazz_daily_report`.
 5. A Google Apps Script project.
 
 ## Recommended WhatsApp template
 
-Create a template in WhatsApp Manager with two body variables.
+Create a template in WhatsApp Manager with **two body variables**.
 
-Example body:
+Recommended body:
 
-`Good morning. Jazz Daily Report for {{1}}: {{2}}`
+`Good morning, Kimmy. Jazz Daily Report for {{1}}: {{2}} Open Jazz: https://dariakimberly4-netizen.github.io/jazz-ai-command-center/`
 
 The Apps Script supplies:
 
 - `{{1}}` = the date
-- `{{2}}` = the concise daily summary, including the Jazz Command Center link when available
+- `{{2}}` = the concise Jazz report summary
 
 Wait until Meta shows the template as approved before testing the scheduled fallback.
 
 ## Google Apps Script
 
 1. Create a new Apps Script project.
-2. Copy the entire contents of `whatsapp-fallback.gs` into `Code.gs`.
-3. Open **Project Settings**.
-4. Under **Script properties**, add:
+2. In this repository, open **`google-apps-script/Code.gs`**.
+3. Copy its entire contents into the Apps Script project's `Code.gs`.
+4. Set the Apps Script project timezone to **Asia/Manila**.
+5. Open **Project Settings → Script properties** and add:
 
 | Property | Value |
 |---|---|
-| `WA_TOKEN` | Your Meta WhatsApp Cloud API access token |
+| `WA_ACCESS_TOKEN` | Meta WhatsApp Cloud API access token |
 | `WA_PHONE_NUMBER_ID` | Sender phone-number ID from Meta |
 | `WA_RECIPIENT` | Kimmy's WhatsApp number, digits only, with country code |
 | `WA_TEMPLATE_NAME` | Example: `jazz_daily_report` |
-| `WA_TEMPLATE_LANG` | Example: `en_US` |
-| `WA_GRAPH_VERSION` | The current Graph API version supported by your Meta app |
-| `JAZZ_DEVICE_KEY` | A private random key of at least 12 characters |
-| `LEADS_JSON_URL` | Optional; Jazz already has a default URL for the repository's `leads.json` |
+| `WA_TEMPLATE_LANGUAGE` | Example: `en_US` |
+| `META_GRAPH_VERSION` | The Graph API version supported by your Meta app |
+| `JAZZ_PRESENCE_KEY` | A private random key of at least 12 characters |
+| `LEADS_JSON_URL` | `https://raw.githubusercontent.com/dariakimberly4-netizen/jazz-ai-command-center/main/leads.json` |
 
-Do **not** publish the token or device key to GitHub.
+Do **not** publish these private values to GitHub.
 
 ## Install the fallback clock
 
-In Apps Script, select the function:
+In Apps Script, choose the function:
 
-`setupJazzFallbackTrigger`
+`installDailyFallbackTrigger`
 
-Tap **Run** once and approve the permissions.
+Tap **Run** once and approve the requested permissions.
 
-It installs a five-minute clock check. The code only sends during the **9:15–9:29 AM Asia/Manila** fallback window and prevents duplicate daily sends.
+It installs a five-minute clock check. The code only sends during the **9:15–9:29 AM Asia/Manila** window and prevents duplicate daily sends.
 
 ## Deploy the private endpoint
 
@@ -72,44 +73,39 @@ In Apps Script:
 1. Tap **Deploy → New deployment**.
 2. Choose **Web app**.
 3. Execute as: **Me**.
-4. Choose an access setting that allows Jazz's GitHub Pages app to call the endpoint.
+4. Choose an access setting that lets the Jazz GitHub Pages app call the endpoint.
 5. Deploy and copy the Web App URL ending in `/exec`.
 
-Your private Jazz connection URL is:
+Create your private Jazz connection URL by adding the same private key:
 
-`YOUR_WEB_APP_URL?key=YOUR_JAZZ_DEVICE_KEY`
+`YOUR_WEB_APP_URL?key=YOUR_JAZZ_PRESENCE_KEY`
 
 Example shape only:
 
 `https://script.google.com/macros/s/DEPLOYMENT_ID/exec?key=YOUR_PRIVATE_KEY`
 
-Keep this combined connection URL private. It is not the Meta token, but it authorizes Jazz's heartbeat requests.
+Keep this combined URL private.
 
 ## Connect it inside Jazz
 
 Open Jazz → **CONNECTIONS** → **WhatsApp Fallback → SET UP**.
 
-Paste the **combined private connection URL** containing `?key=...` and tap **SAVE CONNECTION**.
+Paste the combined private connection URL containing `?key=...` and tap **SAVE CONNECTION**.
 
-That is the only value Jazz needs on the phone. The receiving WhatsApp number and all Meta credentials remain in Apps Script Script Properties.
+That is the only private value Jazz needs on the phone. The receiving WhatsApp number and Meta credentials stay in Apps Script.
 
-## How the online check works
+## Test it
 
-When Jazz is visibly open, `whatsapp-fallback-client.js` sends a small heartbeat and current report summary to the private Apps Script backend. No Meta access token is sent to the browser.
+After the Meta template is approved, run this function once inside Apps Script:
 
-If Jazz is open during the 9:00–9:14 AM window, Jazz also shows and speaks the report. Acknowledging the report records that no WhatsApp fallback is needed that day.
+`testWhatsAppFallback`
 
-During the 9:15–9:29 AM check window, the backend skips WhatsApp when Jazz saw Kimmy online that morning or the report was acknowledged. Otherwise it sends the approved fallback template once.
+A successful test should send the approved Jazz template to the WhatsApp recipient configured in `WA_RECIPIENT`.
 
-Mobile browsers may suspend background pages, so the backend is the part that performs the scheduled check; the phone page does not need to stay running in the background.
+## How Jazz knows you are online
 
-## What the first fallback report contains
+`whatsapp-fallback-client.js` sends a small heartbeat only while Jazz is visibly open. It also shows and speaks the 9:00 AM report locally during the 9:00–9:14 window.
 
-The backend can read Jazz's public `leads.json` and summarize:
+At 9:15–9:29 AM, Apps Script checks whether Jazz recorded a heartbeat after 9:00 AM. If yes, WhatsApp is skipped. If no, the backend sends the fallback once.
 
-- Total CRM leads
-- Hot leads
-- Follow-up count
-- A short next-action reminder
-
-As Gmail, Calendar, Drive, approvals, orders, finance, and Live Work become real protected connections, the report builder can be expanded to include those sources too.
+The fallback summary currently uses Jazz's CRM lead data. As Gmail, Calendar, Drive, orders, finance, approvals, and Live Work become real protected connections, the WhatsApp report can be expanded to include them too.
