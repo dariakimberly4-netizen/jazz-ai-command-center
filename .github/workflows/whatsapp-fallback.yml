@@ -58,7 +58,6 @@ jobs:
             exit 0
           fi
 
-          STATUS_JSON=$(curl -fsS --max-time 12 "${JAZZ_PRESENCE_URL}${JAZZ_PRESENCE_URL#*\?}" >/dev/null 2>&1 && true)
           JOINER='?'
           [[ "$JAZZ_PRESENCE_URL" == *'?'* ]] && JOINER='&'
           STATUS_JSON=$(curl -fsS --max-time 12 "${JAZZ_PRESENCE_URL}${JOINER}action=status" || true)
