@@ -29,7 +29,6 @@ jobs:
         run: |
           mkdir -p _site
           rsync -a --exclude '.git' --exclude '_site' ./ _site/
-          sed -i 's#</body>#  <script src="whatsapp-fallback/jazz-fallback.js"></script>\n</body>#' _site/index.html
       - name: Upload site
         uses: actions/upload-pages-artifact@v3
         with:
