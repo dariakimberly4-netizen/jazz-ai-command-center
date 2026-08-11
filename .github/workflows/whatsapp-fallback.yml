@@ -1,0 +1,122 @@
+name: Jazz WhatsApp Fallback
+
+on:
+  schedule:
+    - cron: '15 9 * * *'
+      timezone: 'Asia/Manila'
+  workflow_dispatch:
+    inputs:
+      force_send:
+        description: 'Send a test even if Jazz was recently online'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  whatsapp-fallback:
+    runs-on: ubuntu-latest
+    env:
+      META_GRAPH_VERSION: ${{ vars.META_GRAPH_VERSION }}
+      WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
+      WHATSAPP_TOKEN: ${{ secrets.WHATSAPP_TOKEN }}
+      WHATSAPP_TO: ${{ secrets.WHATSAPP_TO }}
+      WHATSAPP_TEMPLATE_NAME: ${{ vars.WHATSAPP_TEMPLATE_NAME }}
+      WHATSAPP_TEMPLATE_LANG: ${{ vars.WHATSAPP_TEMPLATE_LANG }}
+      JAZZ_PRESENCE_URL: ${{ secrets.JAZZ_PRESENCE_URL }}
+      JAZZ_URL: https://dariakimberly4-netizen.github.io/jazz-ai-command-center/
+
+    steps:
+      - name: Checkout Jazz data
+        uses: actions/checkout@v4
+
+      - name: Check configuration
+        id: config
+        shell: bash
+        run: |
+          missing=()
+          for name in META_GRAPH_VERSION WHATSAPP_PHONE_NUMBER_ID WHATSAPP_TOKEN WHATSAPP_TO WHATSAPP_TEMPLATE_NAME JAZZ_PRESENCE_URL; do
+            if [[ -z "${!name}" ]]; then missing+=("$name"); fi
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "Jazz WhatsApp fallback is not armed yet. Missing: ${missing[*]}"
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check whether Jazz is online
+        id: presence
+        if: steps.config.outputs.configured == 'true'
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.force_send }}" == "true" ]]; then
+            echo "online=false" >> "$GITHUB_OUTPUT"
+            echo "Forced test requested; presence check bypassed."
+            exit 0
+          fi
+
+          STATUS_JSON=$(curl -fsS --max-time 12 "${JAZZ_PRESENCE_URL}${JAZZ_PRESENCE_URL#*\?}" >/dev/null 2>&1 && true)
+          JOINER='?'
+          [[ "$JAZZ_PRESENCE_URL" == *'?'* ]] && JOINER='&'
+          STATUS_JSON=$(curl -fsS --max-time 12 "${JAZZ_PRESENCE_URL}${JOINER}action=status" || true)
+          LAST_SEEN=$(printf '%s' "$STATUS_JSON" | jq -r '.lastSeen // empty' 2>/dev/null || true)
+
+          online=false
+          if [[ -n "$LAST_SEEN" ]]; then
+            LAST_EPOCH=$(date -u -d "$LAST_SEEN" +%s 2>/dev/null || echo 0)
+            NOW_EPOCH=$(date -u +%s)
+            AGE=$((NOW_EPOCH - LAST_EPOCH))
+            if (( LAST_EPOCH > 0 && AGE >= 0 && AGE <= 1200 )); then
+              online=true
+            fi
+          fi
+
+          echo "online=$online" >> "$GITHUB_OUTPUT"
+          if [[ "$online" == "true" ]]; then
+            echo "Jazz was seen within the last 20 minutes. WhatsApp fallback is not needed."
+          else
+            echo "Jazz has not been seen recently. WhatsApp fallback will be sent."
+          fi
+
+      - name: Build concise Jazz report
+        id: report
+        if: steps.config.outputs.configured == 'true' && steps.presence.outputs.online != 'true'
+        shell: bash
+        run: |
+          TOTAL=$(jq 'length' leads.json)
+          HOT=$(jq '[.[] | select(.Priority == "Hot")] | length' leads.json)
+          FOLLOW=$(jq '[.[] | select((((."Outreach Status" // "") + " " + (."Next Action" // "")) | test("follow"; "i")))] | length' leads.json)
+          SUMMARY="CRM: ${TOTAL} leads, ${HOT} hot, ${FOLLOW} follow-ups. Open Jazz for the full report."
+          echo "summary=$SUMMARY" >> "$GITHUB_OUTPUT"
+
+      - name: Send WhatsApp fallback
+        if: steps.config.outputs.configured == 'true' && steps.presence.outputs.online != 'true'
+        shell: bash
+        run: |
+          TEMPLATE_LANG="${WHATSAPP_TEMPLATE_LANG:-en}"
+          BODY=$(jq -nc \
+            --arg to "$WHATSAPP_TO" \
+            --arg name "$WHATSAPP_TEMPLATE_NAME" \
+            --arg lang "$TEMPLATE_LANG" \
+            --arg person "Kimmy" \
+            --arg summary "${{ steps.report.outputs.summary }}" \
+            --arg url "$JAZZ_URL" \
+            '{messaging_product:"whatsapp",recipient_type:"individual",to:$to,type:"template",template:{name:$name,language:{code:$lang},components:[{type:"body",parameters:[{type:"text",text:$person},{type:"text",text:$summary},{type:"text",text:$url}]}]}}')
+
+          HTTP_CODE=$(curl -sS -o response.json -w '%{http_code}' \
+            -X POST "https://graph.facebook.com/${META_GRAPH_VERSION}/${WHATSAPP_PHONE_NUMBER_ID}/messages" \
+            -H "Authorization: Bearer ${WHATSAPP_TOKEN}" \
+            -H 'Content-Type: application/json' \
+            --data "$BODY")
+
+          if [[ "$HTTP_CODE" -lt 200 || "$HTTP_CODE" -ge 300 ]]; then
+            echo "WhatsApp send failed with HTTP ${HTTP_CODE}."
+            jq -r '.error.message // "Unknown Meta API error"' response.json 2>/dev/null || true
+            exit 1
+          fi
+
+          MESSAGE_ID=$(jq -r '.messages[0].id // empty' response.json)
+          echo "Jazz WhatsApp fallback sent successfully${MESSAGE_ID:+. Message ID received}."
