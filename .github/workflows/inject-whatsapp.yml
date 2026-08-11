@@ -1,0 +1,41 @@
+name: Enable WhatsApp fallback in Jazz
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/inject-whatsapp.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-index:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Jazz
+        uses: actions/checkout@v4
+
+      - name: Load WhatsApp fallback module
+        shell: bash
+        run: |
+          if grep -q 'whatsapp-fallback.js' index.html; then
+            echo 'WhatsApp fallback is already loaded.'
+            exit 0
+          fi
+          perl -0pi -e 's#</body>#  <script src="whatsapp-fallback.js"></script>\n</body>#' index.html
+          grep -q 'whatsapp-fallback.js' index.html
+
+      - name: Commit the safe one-line integration
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'No change needed.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git commit -m 'Enable WhatsApp fallback in Jazz Command Center'
+          git push
