@@ -7,7 +7,7 @@ This module adds a safe fallback for Kimmy's 9:00 AM Jazz report.
 - 9:00 AM Asia/Manila: Jazz daily report is due.
 - Jazz Command Center sends a private heartbeat while the app is open and visible.
 - 9:15 AM Asia/Manila: the backend checks whether Jazz saw Kimmy online recently or whether she tapped **I'M HERE — NO WHATSAPP TODAY**.
-- If neither happened, the backend sends an approved WhatsApp template message with the Jazz Command Center link.
+- If neither happened, the backend sends an approved WhatsApp template message containing the Jazz fallback report.
 
 The browser never stores the WhatsApp access token. The token belongs only in a private backend secret store.
 
@@ -25,9 +25,14 @@ Create or use a Meta business portfolio, WhatsApp Business Account, and business
 
 Recommended template body:
 
-`Good morning Kimmy. Jazz did not see you online for your 9 AM report. Your report is ready here: {{1}}`
+`Good morning {{1}}. {{2}}`
 
-The Worker sends the Jazz Command Center URL as `{{1}}`.
+The Worker sends:
+
+- `{{1}}` = `Kimmy`
+- `{{2}}` = the Jazz fallback report text, including the Jazz Command Center link when available
+
+This two-variable template matches the current `worker.js` payload.
 
 You will need these private values:
 
@@ -50,6 +55,7 @@ Add these Worker variables/secrets in Cloudflare Settings:
 
 Secrets:
 
+- `JAZZ_DEVICE_KEY`
 - `WA_ACCESS_TOKEN`
 - `WA_PHONE_NUMBER_ID`
 - `WA_TO`
@@ -68,10 +74,27 @@ Add the cron trigger `15 1 * * *`. Cloudflare cron uses UTC, so 01:15 UTC is 09:
 
 Open Jazz Command Center > **CONNECTIONS** > **WhatsApp Fallback** > **SET UP**.
 
-Paste the deployed Worker URL once. Jazz stores only this public Worker URL on the phone. It does not store the WhatsApp token.
+Paste the deployed Worker URL once. Then paste the same private `JAZZ_DEVICE_KEY` used in the Worker settings. Jazz stores only the Worker URL and device key on that device. It does not store the WhatsApp access token.
 
 When the status says **Connected**, the fallback is ready.
 
-## Important limitation
+## How the online check works
 
-This first version sends a WhatsApp reminder containing the Jazz link. It does not yet send the full generated daily report text. Sending the full report requires Jazz's real report-generation data/backend to be connected first.
+When Jazz is visible, `jazz-fallback.js` sends a heartbeat and a small local report snapshot to the Worker. The snapshot can include CRM lead counts, active systems, and approval counts.
+
+At 9:15 AM Manila time, the Worker checks whether Jazz was recently online or the report was acknowledged. If yes, it skips WhatsApp. If not, it sends the approved template once for that day.
+
+Mobile browsers may suspend background pages, so the fallback is intentionally conservative: if Jazz cannot confirm recent activity, WhatsApp acts as the safety backup.
+
+## Current report scope
+
+The fallback can currently summarize Jazz data already available in the browser, including:
+
+- Total CRM leads
+- Hot leads
+- Follow-up count
+- Active systems
+- Approval count
+- Jazz Command Center link
+
+As Gmail, Calendar, Drive, and other real backends are connected, the report builder can be expanded to include those sources too.
