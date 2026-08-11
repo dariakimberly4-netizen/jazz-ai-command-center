@@ -1,19 +1,21 @@
 /*
  * JAZZ AI — WhatsApp fallback backend for Google Apps Script
  *
- * Purpose
- * 1) Jazz browser sends a private heartbeat while Kimmy is visibly online.
- * 2) A time trigger checks after 9:15 AM Asia/Manila.
- * 3) If no Jazz heartbeat has been seen that morning, send the approved
- *    WhatsApp template through Meta WhatsApp Cloud API.
+ * 1) Jazz sends a private heartbeat while Kimmy is visibly online.
+ * 2) Jazz speaks/shows the 9:00 AM report when the Command Center is open.
+ * 3) A time trigger checks during 9:15–9:29 AM Asia/Manila.
+ * 4) If Jazz has not seen Kimmy online that morning, send the fallback report
+ *    through Meta WhatsApp Cloud API.
  *
- * IMPORTANT: Never place Meta tokens in index.html or any public GitHub file.
- * Put all secrets in Apps Script > Project Settings > Script properties.
+ * IMPORTANT: Keep Meta tokens in Apps Script > Project Settings > Script properties.
+ * Never place them in GitHub Pages or browser code.
  */
 
 const JAZZ_TZ = 'Asia/Manila';
 const FALLBACK_START_MINUTE = 15;
 const FALLBACK_END_MINUTE = 29;
+const DEFAULT_LEADS_URL = 'https://dariakimberly4-netizen.github.io/jazz-ai-command-center/leads.json';
+const DEFAULT_JAZZ_URL = 'https://dariakimberly4-netizen.github.io/jazz-ai-command-center/';
 
 function props_() {
   return PropertiesService.getScriptProperties();
@@ -58,7 +60,10 @@ function doPost(e) {
       p.setProperty('LAST_SEEN_AT', now.toISOString());
       p.setProperty('LAST_SEEN_DATE', phDate_(now));
       p.setProperty('LAST_SEEN_TIME', phTime_(now));
-      if (body.report) p.setProperty('LAST_BROWSER_REPORT', String(body.report).slice(0, 1800));
+      if (body.report) {
+        p.setProperty('LAST_BROWSER_REPORT', String(body.report).slice(0, 1800));
+        p.setProperty('LAST_BROWSER_REPORT_DATE', phDate_(now));
+      }
       return json_({ ok: true, action: action });
     }
 
@@ -67,6 +72,10 @@ function doPost(e) {
       p.setProperty('LAST_SEEN_DATE', phDate_(now));
       p.setProperty('LAST_SEEN_TIME', phTime_(now));
       p.setProperty('LAST_ACK_DATE', phDate_(now));
+      if (body.report) {
+        p.setProperty('LAST_BROWSER_REPORT', String(body.report).slice(0, 1800));
+        p.setProperty('LAST_BROWSER_REPORT_DATE', phDate_(now));
+      }
       return json_({ ok: true, action: 'ack' });
     }
 
@@ -82,7 +91,7 @@ function doPost(e) {
   }
 }
 
-/* Run this ONCE from Apps Script after adding your Script Properties. */
+/* Run this ONCE after adding Script Properties. */
 function setupJazzFallbackTrigger() {
   ScriptApp.getProjectTriggers().forEach(function(trigger) {
     if (trigger.getHandlerFunction() === 'checkJazzWhatsAppFallback') {
@@ -107,6 +116,11 @@ function checkJazzWhatsAppFallback() {
   const p = props_();
   const today = phDate_(now);
   if (p.getProperty('WA_SENT_DATE') === today) return;
+
+  if (p.getProperty('LAST_ACK_DATE') === today) {
+    console.log('Jazz report was acknowledged today. WhatsApp fallback skipped.');
+    return;
+  }
 
   const lastSeenIso = p.getProperty('LAST_SEEN_AT');
   if (lastSeenIso) {
@@ -174,29 +188,31 @@ function sendJazzWhatsAppTemplate_(reason) {
 
 function buildJazzFallbackSummary_() {
   const p = props_();
-  const leadsUrl = p.getProperty('LEADS_JSON_URL');
+  const today = phDate_(new Date());
+  const browserReport = p.getProperty('LAST_BROWSER_REPORT');
+  const browserReportDate = p.getProperty('LAST_BROWSER_REPORT_DATE');
+  if (browserReport && browserReportDate === today) return browserReport;
 
-  if (leadsUrl) {
-    try {
-      const response = UrlFetchApp.fetch(leadsUrl, { muteHttpExceptions: true });
-      if (response.getResponseCode() >= 200 && response.getResponseCode() < 300) {
-        const leads = JSON.parse(response.getContentText());
-        if (Array.isArray(leads)) {
-          const total = leads.length;
-          const hot = leads.filter(function(l) { return String(l.Priority || '') === 'Hot'; }).length;
-          const follow = leads.filter(function(l) {
-            return /follow/i.test(String(l['Outreach Status'] || '') + ' ' + String(l['Next Action'] || ''));
-          }).length;
-          return 'Lead & CRM: ' + total + ' total, ' + hot + ' Hot, ' + follow +
-            ' needing follow-up. Review urgent follow-ups and approvals first.';
-        }
+  const leadsUrl = p.getProperty('LEADS_JSON_URL') || DEFAULT_LEADS_URL;
+  try {
+    const response = UrlFetchApp.fetch(leadsUrl, { muteHttpExceptions: true });
+    if (response.getResponseCode() >= 200 && response.getResponseCode() < 300) {
+      const leads = JSON.parse(response.getContentText());
+      if (Array.isArray(leads)) {
+        const total = leads.length;
+        const hot = leads.filter(function(l) { return String(l.Priority || '') === 'Hot'; }).length;
+        const follow = leads.filter(function(l) {
+          return /follow/i.test(String(l['Outreach Status'] || '') + ' ' + String(l['Next Action'] || ''));
+        }).length;
+        return 'Lead & CRM: ' + total + ' total, ' + hot + ' Hot, ' + follow +
+          ' needing follow-up. Review urgent follow-ups and approvals first. Open Jazz: ' + DEFAULT_JAZZ_URL;
       }
-    } catch (err) {
-      console.error('Could not build CRM summary: ' + err);
     }
+  } catch (err) {
+    console.error('Could not build CRM summary: ' + err);
   }
 
-  return 'Your Jazz daily report is ready. Review urgent items, today’s priorities, follow-ups, approvals, and next actions in Jazz Command Center.';
+  return 'Your Jazz daily report is ready. Review urgent items, today’s priorities, follow-ups, approvals, and next actions. Open Jazz: ' + DEFAULT_JAZZ_URL;
 }
 
 /* Optional diagnostic. Run manually in Apps Script. */
