@@ -1,0 +1,26 @@
+name = "jazz-whatsapp-fallback"
+main = "worker.js"
+compatibility_date = "2026-08-12"
+
+# Cloudflare Cron Triggers run in UTC.
+# 01:00 UTC = 09:00 Asia/Manila
+# 01:15 UTC = 09:15 Asia/Manila
+[triggers]
+crons = ["0 1 * * *", "15 1 * * *"]
+
+[[kv_namespaces]]
+binding = "JAZZ_STATE"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+[vars]
+ALLOWED_ORIGIN = "https://dariakimberly4-netizen.github.io"
+JAZZ_URL = "https://dariakimberly4-netizen.github.io/jazz-ai-command-center/"
+WHATSAPP_TEMPLATE_NAME = "jazz_daily_report"
+WHATSAPP_TEMPLATE_LANGUAGE = "en_US"
+META_GRAPH_VERSION = "SET_TO_A_CURRENT_SUPPORTED_GRAPH_API_VERSION"
+
+# Keep these as encrypted Worker secrets, NOT normal vars and NOT in GitHub:
+# WHATSAPP_PHONE_NUMBER_ID
+# WHATSAPP_ACCESS_TOKEN
+# WHATSAPP_TO
+# JAZZ_BACKEND_KEY
