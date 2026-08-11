@@ -1,23 +1,6 @@
-/* Jazz WhatsApp fallback loader.
-   Keeps the older inline/client setup from creating a second UI, then loads the
-   maintained WhatsApp fallback module from whatsapp-fallback/jazz-fallback.js.
+/* Compatibility stub.
+   The active Jazz WhatsApp fallback is handled by whatsapp-fallback-client.js
+   plus the private Google Apps Script backend in google-apps-script/Code.gs.
+   This file intentionally does not create a second fallback UI or heartbeat.
 */
-(() => {
-  'use strict';
-
-  // Disable the older browser-only presence client if it was loaded by index.html.
-  try { window.JazzWhatsAppFallback?.disable?.(); } catch (_) {}
-
-  // Remove the older duplicate WhatsApp row/setup so Kimmy sees one clear control.
-  const legacyStatus = document.querySelector('#waFallbackStatus');
-  legacyStatus?.closest('.row')?.remove();
-  document.querySelector('#waFallbackSetup')?.remove();
-
-  // Load the maintained 9 AM report + 9:15 WhatsApp fallback UI.
-  if (document.querySelector('script[data-jazz-whatsapp-maintained]')) return;
-  const script = document.createElement('script');
-  script.src = './whatsapp-fallback/jazz-fallback.js';
-  script.defer = true;
-  script.dataset.jazzWhatsappMaintained = 'true';
-  document.body.appendChild(script);
-})();
+console.info('Jazz WhatsApp fallback is handled by whatsapp-fallback-client.js.');
