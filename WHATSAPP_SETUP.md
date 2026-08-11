@@ -8,16 +8,16 @@ This adds the rule:
 
 ## Security rule
 
-Never paste a Meta access token into `index.html`, `whatsapp-fallback.js`, GitHub Pages, or any other public repository file.
+Never paste a Meta access token into `index.html`, `whatsapp-fallback-client.js`, GitHub Pages, or any other public repository file.
 
-The Meta token and WhatsApp phone-number ID belong only in **Google Apps Script → Project Settings → Script properties**.
+The Meta token, sender phone-number ID, and receiving WhatsApp number belong only in **Google Apps Script → Project Settings → Script properties**.
 
 ## What you need
 
-1. A Meta Developer app with **WhatsApp Cloud API** / WhatsApp Business Platform configured.
+1. A Meta Developer app with WhatsApp Cloud API / WhatsApp Business Platform configured.
 2. A WhatsApp Business API sender number in Meta.
 3. Kimmy's receiving WhatsApp number in international digits, for example `639XXXXXXXXX`.
-4. An approved WhatsApp message template called, for example, `jazz_daily_report`.
+4. An approved WhatsApp message template, for example `jazz_daily_report`.
 5. A Google Apps Script project.
 
 ## Recommended WhatsApp template
@@ -26,12 +26,12 @@ Create a template in WhatsApp Manager with two body variables.
 
 Example body:
 
-`Good morning Kimmy. Jazz Daily Report for {{1}}: {{2}} Open Jazz Command Center: https://dariakimberly4-netizen.github.io/jazz-ai-command-center/`
+`Good morning. Jazz Daily Report for {{1}}: {{2}}`
 
 The Apps Script supplies:
 
 - `{{1}}` = the date
-- `{{2}}` = the concise daily summary
+- `{{2}}` = the concise daily summary, including the Jazz Command Center link when available
 
 Wait until Meta shows the template as approved before testing the scheduled fallback.
 
@@ -49,9 +49,9 @@ Wait until Meta shows the template as approved before testing the scheduled fall
 | `WA_RECIPIENT` | Kimmy's WhatsApp number, digits only, with country code |
 | `WA_TEMPLATE_NAME` | Example: `jazz_daily_report` |
 | `WA_TEMPLATE_LANG` | Example: `en_US` |
-| `WA_GRAPH_VERSION` | The current Graph API version shown/supported by your Meta app, such as `vXX.X` |
+| `WA_GRAPH_VERSION` | The current Graph API version supported by your Meta app |
 | `JAZZ_DEVICE_KEY` | A private random key of at least 12 characters |
-| `LEADS_JSON_URL` | `https://raw.githubusercontent.com/dariakimberly4-netizen/jazz-ai-command-center/main/leads.json` |
+| `LEADS_JSON_URL` | Optional; Jazz already has a default URL for the repository's `leads.json` |
 
 Do **not** publish the token or device key to GitHub.
 
@@ -72,40 +72,44 @@ In Apps Script:
 1. Tap **Deploy → New deployment**.
 2. Choose **Web app**.
 3. Execute as: **Me**.
-4. Choose the access option required for Jazz's GitHub Pages request to reach the web app.
+4. Choose an access setting that allows Jazz's GitHub Pages app to call the endpoint.
 5. Deploy and copy the Web App URL ending in `/exec`.
 
-Treat that URL as private configuration even though it is not the Meta token.
+Your private Jazz connection URL is:
+
+`YOUR_WEB_APP_URL?key=YOUR_JAZZ_DEVICE_KEY`
+
+Example shape only:
+
+`https://script.google.com/macros/s/DEPLOYMENT_ID/exec?key=YOUR_PRIVATE_KEY`
+
+Keep this combined connection URL private. It is not the Meta token, but it authorizes Jazz's heartbeat requests.
 
 ## Connect it inside Jazz
 
 Open Jazz → **CONNECTIONS** → **WhatsApp Fallback → SET UP**.
 
-Enter:
+Paste the **combined private connection URL** containing `?key=...` and tap **SAVE CONNECTION**.
 
-- Your receiving WhatsApp number
-- The Apps Script Web App URL
-- The same `JAZZ_DEVICE_KEY`
-
-Turn **WhatsApp fallback ON** and tap **SAVE**.
-
-Then tap **TEST**. Jazz sends a test request to the private Apps Script backend, which sends the approved WhatsApp template through Meta.
+That is the only value Jazz needs on the phone. The receiving WhatsApp number and all Meta credentials remain in Apps Script Script Properties.
 
 ## How the online check works
 
-When Jazz is visibly open, `whatsapp-fallback.js` sends a small heartbeat to the private Apps Script backend. No Meta token is sent to the browser.
+When Jazz is visibly open, `whatsapp-fallback-client.js` sends a small heartbeat and current report summary to the private Apps Script backend. No Meta access token is sent to the browser.
 
-At the fallback check, the backend looks for a heartbeat from that morning. If it saw Kimmy online after 9:00 AM, it skips WhatsApp. If it did not, it sends the fallback template once.
+If Jazz is open during the 9:00–9:14 AM window, Jazz also shows and speaks the report. Acknowledging the report records that no WhatsApp fallback is needed that day.
 
-Mobile browsers may suspend background pages, so the fallback is intentionally conservative: if Jazz cannot confirm that the page is visibly active, WhatsApp may still be sent as a safety backup.
+During the 9:15–9:29 AM check window, the backend skips WhatsApp when Jazz saw Kimmy online that morning or the report was acknowledged. Otherwise it sends the approved fallback template once.
+
+Mobile browsers may suspend background pages, so the backend is the part that performs the scheduled check; the phone page does not need to stay running in the background.
 
 ## What the first fallback report contains
 
-The backend can read the public `leads.json` and summarize:
+The backend can read Jazz's public `leads.json` and summarize:
 
 - Total CRM leads
 - Hot leads
 - Follow-up count
 - A short next-action reminder
 
-As Gmail, Calendar, Drive, approvals, and live-work backends become real connections, the report builder can be expanded to include those sources too.
+As Gmail, Calendar, Drive, approvals, orders, finance, and Live Work become real protected connections, the report builder can be expanded to include those sources too.
