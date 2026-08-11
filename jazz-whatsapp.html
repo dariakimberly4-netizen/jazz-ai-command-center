@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#070817">
+  <title>JAZZ AI — WhatsApp Fallback</title>
+  <style>
+    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#050613;color:#fff8e9;font-family:Inter,system-ui,sans-serif}
+    iframe{display:block;width:100%;height:100%;border:0;background:#050613}
+    #loading{position:fixed;inset:0;display:grid;place-items:center;background:#050613;z-index:5;text-align:center;padding:24px}
+    #loading strong{display:block;color:#d9bd7c;letter-spacing:.12em;font-size:1.1rem}
+    #loading small{display:block;color:#aaa8bd;margin-top:8px}
+  </style>
+</head>
+<body>
+  <div id="loading"><div><strong>JAZZ AI</strong><small>Loading Command Center…</small></div></div>
+  <iframe id="jazzApp" src="./index.html" title="Jazz AI Command Center" allow="microphone; autoplay"></iframe>
+  <script>
+    const frame=document.getElementById('jazzApp');
+    frame.addEventListener('load',()=>{
+      try{
+        const doc=frame.contentDocument;
+        if(doc && !doc.getElementById('jazzWhatsAppModule')){
+          const s=doc.createElement('script');
+          s.id='jazzWhatsAppModule';
+          s.src='./whatsapp-fallback.js';
+          doc.body.appendChild(s);
+        }
+      }catch(e){console.error(e)}
+      document.getElementById('loading').remove();
+    });
+  </script>
+</body>
+</html>
