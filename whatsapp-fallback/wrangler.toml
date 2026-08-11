@@ -1,0 +1,19 @@
+name = "jazz-whatsapp-fallback"
+main = "worker.js"
+compatibility_date = "2026-08-12"
+
+[triggers]
+crons = ["15 1 * * *"]
+
+[vars]
+WA_TEMPLATE_NAME = "jazz_daily_fallback"
+WA_TEMPLATE_LANG = "en_US"
+JAZZ_URL = "https://dariakimberly4-netizen.github.io/jazz-ai-command-center/"
+ALLOWED_ORIGIN = "https://dariakimberly4-netizen.github.io"
+
+# Add these privately in Cloudflare Worker settings instead of committing them:
+# WA_ACCESS_TOKEN
+# WA_PHONE_NUMBER_ID
+# WA_TO
+# WA_GRAPH_VERSION
+# FALLBACK_KV binding (Workers KV namespace)
