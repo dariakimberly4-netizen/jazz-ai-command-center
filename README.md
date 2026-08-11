@@ -11,10 +11,13 @@ Kimmy's private, mobile-first and Parkinson-friendly AI Chief of Staff interface
 - Live Work activity log with honest connection status
 - Approval and Google Connections screens
 - Local playback for Kimmy's legally provided music file
+- Permanent System Builder with quick-start system types, voice idea capture, approval gates, honest Live Work stages and device-local My Systems memory
 
 ## Important
 
 This GitHub Pages interface never invents Gmail, Drive or Calendar data. Secure Google OAuth and a protected backend must be connected before those services can perform real actions.
+
+The System Builder plans, approves and remembers system requests in the browser. Autonomous repository creation, backend/database work and deployment require a connected protected build service; unfinished stages are shown as pending rather than falsely reported as complete.
 
 ## Publish
 
