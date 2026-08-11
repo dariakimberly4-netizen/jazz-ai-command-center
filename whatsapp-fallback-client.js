@@ -13,6 +13,7 @@
   const FIVE_MINUTES = 5 * 60 * 1000;
 
   const $ = (s) => document.querySelector(s);
+  let startupReportToken = 0;
 
   function backendUrl() {
     return localStorage.getItem(URL_KEY) || '';
@@ -50,12 +51,26 @@
     return Number.isFinite(n) ? n : 0;
   }
 
-  function reportText() {
+  function dashboardNumbers() {
     let systems = [];
     try { systems = JSON.parse(localStorage.getItem('jazzSystems') || '[]'); } catch (_) {}
-    const activeSystems = systems.filter((s) => !/archived/i.test(String(s.status || ''))).length;
-    const approvals = [...document.querySelectorAll('#approvalList .row')].length;
-    return `Good morning, Kimmy. Here is your Jazz 9 AM report. You have ${numberFrom('#totalLeads')} leads, ${numberFrom('#hotLeads')} hot leads, ${numberFrom('#followLeads')} needing follow-up, ${activeSystems} active systems, and ${approvals} approvals waiting. Review urgent follow-ups and approvals first.`;
+    return {
+      leads: numberFrom('#totalLeads'),
+      hotLeads: numberFrom('#hotLeads'),
+      followLeads: numberFrom('#followLeads'),
+      activeSystems: systems.filter((s) => !/archived/i.test(String(s.status || ''))).length,
+      approvals: [...document.querySelectorAll('#approvalList .row')].length
+    };
+  }
+
+  function reportText() {
+    const d = dashboardNumbers();
+    return `Good morning, Kimmy. Here is your Jazz 9 AM report. You have ${d.leads} leads, ${d.hotLeads} hot leads, ${d.followLeads} needing follow-up, ${d.activeSystems} active systems, and ${d.approvals} approvals waiting. Review urgent follow-ups and approvals first.`;
+  }
+
+  function startupReportText() {
+    const d = dashboardNumbers();
+    return `Here is your report, Kimmy. You currently have ${d.leads} leads, ${d.hotLeads} hot leads, ${d.followLeads} needing follow-up, ${d.activeSystems} active systems, and ${d.approvals} approvals waiting. Your first priority is to review urgent follow-ups and anything waiting for your approval. I am ready for your next instruction.`;
   }
 
   function post(action, extra = {}) {
@@ -85,6 +100,54 @@
     post('heartbeat', { report: reportText() });
     localStorage.setItem(LAST_PING_KEY, at);
     return true;
+  }
+
+  function showReportCard(text, eyebrow = 'JAZZ REPORT') {
+    const home = $('#home');
+    if (!home) return;
+    let card = $('#jazzStartupReportCard');
+    if (!card) {
+      card = document.createElement('div');
+      card.className = 'panel';
+      card.id = 'jazzStartupReportCard';
+      card.innerHTML = `
+        <div class="eyebrow" id="jazzStartupReportEyebrow"></div>
+        <h2>Your report, Kimmy</h2>
+        <p id="jazzStartupReportText"></p>
+        <div class="approve-actions">
+          <button class="yes" id="jazzStartupReportGotIt">GOT IT</button>
+          <button id="jazzStartupReportLiveWork">LIVE WORK</button>
+        </div>`;
+      const firstPanel = home.querySelector('.panel');
+      home.insertBefore(card, firstPanel || null);
+      $('#jazzStartupReportGotIt').onclick = () => card.remove();
+      $('#jazzStartupReportLiveWork').onclick = () => {
+        if (typeof window.nav === 'function') window.nav('work');
+      };
+    }
+    $('#jazzStartupReportEyebrow').textContent = eyebrow;
+    $('#jazzStartupReportText').textContent = text;
+  }
+
+  function speakStartupReport() {
+    const text = startupReportText();
+    showReportCard(text, 'AUTOMATIC JAZZ REPORT');
+    post('startup-report', { report: text });
+    if (typeof window.toast === 'function') window.toast('Jazz is giving you your report.');
+    if (typeof window.speak === 'function') window.speak(text);
+  }
+
+  function queueStartupReportAfterGreeting() {
+    const token = ++startupReportToken;
+    const waitForGreeting = () => {
+      if (token !== startupReportToken) return;
+      if ('speechSynthesis' in window && window.speechSynthesis.speaking) {
+        setTimeout(waitForGreeting, 250);
+        return;
+      }
+      speakStartupReport();
+    };
+    setTimeout(waitForGreeting, 450);
   }
 
   function showDailyReport() {
@@ -154,7 +217,27 @@
     };
   }
 
-  window.JazzWhatsAppFallback = { configure, disable, heartbeat, status, showDailyReport };
+  window.JazzWhatsAppFallback = {
+    configure,
+    disable,
+    heartbeat,
+    status,
+    showDailyReport,
+    showStartupReport: speakStartupReport,
+    queueStartupReportAfterGreeting
+  };
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const orb = $('#orb');
+    if (orb) {
+      orb.addEventListener('click', queueStartupReportAfterGreeting);
+    }
+
+    const reportButton = document.querySelector('[data-act="report"]');
+    if (reportButton) {
+      reportButton.onclick = () => speakStartupReport();
+    }
+  });
 
   window.addEventListener('pageshow', () => {
     heartbeat();
