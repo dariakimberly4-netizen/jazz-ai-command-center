@@ -23,6 +23,26 @@
       '<span class="mark"></span><div><strong>' + label + '</strong><small>' + detail + '</small></div></div>';
   }
 
+  function migrateOldStatuses() {
+    if (typeof systems === 'undefined' || !Array.isArray(systems)) return;
+    var changed = false;
+    systems.forEach(function (s) {
+      if (!s) return;
+      if (s.live) {
+        if (s.status !== 'LIVE — created and deployed') {
+          s.status = 'LIVE — created and deployed';
+          changed = true;
+        }
+        return;
+      }
+      if (/approved|ready to build|build approved/i.test(String(s.status || ''))) {
+        s.status = 'NOT CREATED — waiting for builder';
+        changed = true;
+      }
+    });
+    if (changed && typeof saveSystems === 'function') saveSystems();
+  }
+
   function enhancedApprove(event) {
     if (typeof draftSystem === 'undefined' || !draftSystem) return;
 
@@ -97,4 +117,6 @@
       return found;
     }
   };
+
+  migrateOldStatuses();
 })();
