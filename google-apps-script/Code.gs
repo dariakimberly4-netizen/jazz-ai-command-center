@@ -3,13 +3,15 @@
  * Google Apps Script (V8)
  *
  * Current protected services:
+ * - Real System Builder: Gemini -> GitHub repository -> GitHub Pages
  * - WhatsApp fallback for the 9:00 AM Jazz report
  * - Facebook Page OAuth and Page access-token storage
  *
  * SECURITY:
- * Keep all Meta tokens, app secrets, phone IDs, recipient numbers, and the
- * Jazz private key in Apps Script > Project Settings > Script properties.
- * Never put them in GitHub Pages or public JavaScript.
+ * Keep GitHub tokens, Gemini keys, Meta tokens, app secrets, phone IDs,
+ * recipient numbers, and the Jazz private key in Apps Script
+ * Project Settings > Script properties. Never put them in GitHub Pages
+ * or public JavaScript.
  */
 
 const JAZZ_TIME_ZONE = 'Asia/Manila';
@@ -17,6 +19,8 @@ const FALLBACK_START_MINUTE = 15;
 const FALLBACK_END_MINUTE = 29;
 const FACEBOOK_DEFAULT_RETURN_URL = 'https://dariakimberly4-netizen.github.io/jazz-ai-command-center/';
 const FACEBOOK_DEFAULT_SCOPES = 'pages_show_list,pages_read_engagement,pages_manage_posts';
+const GITHUB_API_VERSION = '2026-03-10';
+const DEFAULT_GEMINI_MODEL = 'gemini-3.6-flash';
 
 function props_() {
   return PropertiesService.getScriptProperties();
@@ -50,6 +54,11 @@ function doGet(e) {
   try {
     const action = e && e.parameter ? String(e.parameter.action || '') : '';
 
+    if (action === 'buildStatus') {
+      requirePresenceKey_(e, {});
+      return realSystemBuildStatusJsonp_(e);
+    }
+
     if (e && e.parameter && (e.parameter.code || e.parameter.error)) {
       return facebookOAuthCallback_(e);
     }
@@ -73,7 +82,12 @@ function doGet(e) {
       ok: true,
       service: 'Jazz Private Backend',
       timezone: JAZZ_TIME_ZONE,
-      facebookConfigured: Boolean(props_().getProperty('FB_PAGE_ACCESS_TOKEN'))
+      facebookConfigured: Boolean(props_().getProperty('FB_PAGE_ACCESS_TOKEN')),
+      realBuilderConfigured: Boolean(
+        props_().getProperty('GITHUB_TOKEN') &&
+        props_().getProperty('GITHUB_OWNER') &&
+        props_().getProperty('GEMINI_API_KEY')
+      )
     });
   } catch (err) {
     console.error(err);
@@ -88,6 +102,34 @@ function doGet(e) {
 
 function doPost(e) {
   try {
+    if (e && e.parameter && String(e.parameter.jazz_action || '') === 'buildSystem') {
+      const formPayload = { key: String(e.parameter.key || '') };
+      requirePresenceKey_(e, formPayload);
+      let system = {};
+      try {
+        system = JSON.parse(String(e.parameter.system_json || '{}'));
+      } catch (_) {
+        throw new Error('The approved system specification could not be read.');
+      }
+      const systemId = realBuildId_(system.id);
+      try {
+        buildRealSystem_(system);
+        return HtmlService.createHtmlOutput(
+          '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">' +
+          '<body style="font-family:system-ui;background:#08091a;color:#fff;padding:24px">' +
+          '<h2>Jazz real build started</h2><p>You can return to Jazz. Live Work is checking the real deployment.</p></body>'
+        );
+      } catch (buildErr) {
+        setRealBuildStatus_(systemId, 'ERROR', String(buildErr && buildErr.message ? buildErr.message : buildErr), {});
+        console.error(buildErr);
+        return HtmlService.createHtmlOutput(
+          '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">' +
+          '<body style="font-family:system-ui;background:#08091a;color:#fff;padding:24px">' +
+          '<h2>Jazz build needs attention</h2><p>' + htmlEscape_(String(buildErr && buildErr.message ? buildErr.message : buildErr)) + '</p></body>'
+        );
+      }
+    }
+
     const payload = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     requirePresenceKey_(e, payload);
 
@@ -135,6 +177,266 @@ function requirePresenceKey_(e, payload) {
   if (queryKey !== expected && bodyKey !== expected) {
     throw new Error('Unauthorized');
   }
+}
+
+/* ========================= REAL SYSTEM BUILDER ========================= */
+
+function realBuildId_(value) {
+  const clean = String(value || Date.now()).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80);
+  return clean || String(Date.now());
+}
+
+function realBuildStatusKey_(id) {
+  return 'REAL_BUILD_' + realBuildId_(id);
+}
+
+function setRealBuildStatus_(id, stage, detail, extra) {
+  const current = getRealBuildStatus_(id);
+  const next = Object.assign({}, current, extra || {}, {
+    ok: true,
+    id: realBuildId_(id),
+    stage: String(stage || 'QUEUED'),
+    detail: String(detail || ''),
+    updatedAt: new Date().toISOString()
+  });
+  props_().setProperty(realBuildStatusKey_(id), JSON.stringify(next));
+  return next;
+}
+
+function getRealBuildStatus_(id) {
+  const clean = realBuildId_(id);
+  const raw = props_().getProperty(realBuildStatusKey_(clean));
+  if (!raw) return { ok: true, id: clean, stage: 'QUEUED', detail: 'Waiting for the real builder to start.' };
+  try { return JSON.parse(raw); }
+  catch (_) { return { ok: false, id: clean, stage: 'ERROR', detail: 'Saved build status is unreadable.' }; }
+}
+
+function realSystemBuildStatusJsonp_(e) {
+  const id = realBuildId_(e && e.parameter ? e.parameter.system_id : '');
+  let status = getRealBuildStatus_(id);
+
+  if (status.stage === 'DEPLOYING' && status.url) {
+    try {
+      const page = UrlFetchApp.fetch(String(status.url), {
+        method: 'get',
+        followRedirects: true,
+        muteHttpExceptions: true
+      });
+      const code = page.getResponseCode();
+      if (code >= 200 && code < 400) {
+        status = setRealBuildStatus_(id, 'LIVE', 'Real GitHub Pages system verified reachable.', {
+          url: String(status.url),
+          repo: String(status.repo || ''),
+          httpStatus: code
+        });
+      }
+    } catch (err) {
+      console.warn('Deployment verification still waiting: ' + err);
+    }
+  }
+
+  const rawCallback = String((e && e.parameter && e.parameter.callback) || '');
+  const callback = /^[A-Za-z_$][A-Za-z0-9_$.]*$/.test(rawCallback) ? rawCallback : '';
+  if (!callback) return json_(status);
+
+  return ContentService
+    .createTextOutput(callback + '(' + JSON.stringify(status) + ');')
+    .setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
+function buildRealSystem_(system) {
+  const id = realBuildId_(system && system.id);
+  const githubToken = requiredProperty_('GITHUB_TOKEN');
+  const githubOwner = requiredProperty_('GITHUB_OWNER');
+  requiredProperty_('GEMINI_API_KEY');
+
+  setRealBuildStatus_(id, 'GENERATING', 'Generating the actual deployable application files with Gemini.', {});
+  const generated = generateRealSystemFiles_(system || {});
+  validateGeneratedSystem_(generated);
+
+  const repoName = realSystemRepoName_(system || {}, id);
+  setRealBuildStatus_(id, 'CREATING_REPOSITORY', 'Creating GitHub repository ' + repoName + '.', { repo: githubOwner + '/' + repoName });
+
+  const repo = githubRequest_('post', '/user/repos', {
+    name: repoName,
+    description: 'Real system built by Jazz AI Command Center',
+    private: false,
+    auto_init: true,
+    has_issues: true
+  }, githubToken, [201]);
+
+  const owner = String(repo.owner && repo.owner.login ? repo.owner.login : githubOwner);
+  const fullRepo = owner + '/' + repoName;
+  Utilities.sleep(1200);
+
+  setRealBuildStatus_(id, 'UPLOADING_FILES', 'Writing the real application files to ' + fullRepo + '.', { repo: fullRepo });
+  githubPutFile_(owner, repoName, 'index.html', generated.index_html, 'Build real system application', githubToken);
+
+  const specText = '# Jazz AI Real System\n\n' +
+    'Built: ' + new Date().toISOString() + '\n\n' +
+    '## Approved specification\n\n```json\n' + JSON.stringify(system || {}, null, 2) + '\n```\n\n' +
+    '## Builder notes\n\n' + String(generated.system_notes || 'Generated as a self-contained GitHub Pages system.');
+  githubPutFile_(owner, repoName, 'SYSTEM_SPEC.md', specText, 'Save approved system specification', githubToken);
+
+  setRealBuildStatus_(id, 'ENABLING_PAGES', 'Enabling GitHub Pages for the real system.', { repo: fullRepo });
+  Utilities.sleep(1500);
+
+  let pages = null;
+  try {
+    pages = githubRequest_('post', '/repos/' + encodeURIComponent(owner) + '/' + encodeURIComponent(repoName) + '/pages', {
+      source: { branch: 'main', path: '/' }
+    }, githubToken, [201]);
+  } catch (firstPagesErr) {
+    Utilities.sleep(2500);
+    pages = githubRequest_('post', '/repos/' + encodeURIComponent(owner) + '/' + encodeURIComponent(repoName) + '/pages', {
+      source: { branch: 'main', path: '/' }
+    }, githubToken, [201, 409]);
+  }
+
+  try {
+    githubRequest_('post', '/repos/' + encodeURIComponent(owner) + '/' + encodeURIComponent(repoName) + '/pages/builds', {}, githubToken, [201, 409]);
+  } catch (err) {
+    console.warn('GitHub Pages build request will continue automatically: ' + err);
+  }
+
+  const pageUrl = pages && pages.html_url ? String(pages.html_url) :
+    'https://' + owner.toLowerCase() + '.github.io/' + repoName + '/';
+
+  setRealBuildStatus_(id, 'DEPLOYING', 'GitHub Pages is deploying. Jazz is verifying the real HTTPS system.', {
+    repo: fullRepo,
+    url: pageUrl
+  });
+
+  return { ok: true, id: id, repo: fullRepo, url: pageUrl, stage: 'DEPLOYING' };
+}
+
+function realSystemRepoName_(system, id) {
+  const source = String(system.name || system.type || system.idea || 'system')
+    .replace(/^#+\s*/g, '')
+    .split(/[\n\r]/)[0]
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 34) || 'system';
+  const suffix = realBuildId_(id).slice(-8).toLowerCase();
+  return ('jazz-' + source + '-' + suffix).slice(0, 60).replace(/-+$/g, '');
+}
+
+function generateRealSystemFiles_(system) {
+  const apiKey = requiredProperty_('GEMINI_API_KEY');
+  const model = props_().getProperty('GEMINI_MODEL') || DEFAULT_GEMINI_MODEL;
+  const prompt = [
+    'You are the production code generator inside Jazz AI Command Center.',
+    'Create an ACTUAL working web system for deployment on GitHub Pages. Do not create a mockup or prototype.',
+    'Return one complete self-contained index.html file with embedded CSS and JavaScript.',
+    'All visible controls must work. Do not include fake buttons, TODO items, placeholder workflows, demo records, lorem ipsum, or sample beneficiaries/patients.',
+    'Use IndexedDB for real persistent browser data. Provide clear backup/export and import/restore tools so records can be moved to another device.',
+    'Use no CDN libraries and no external runtime dependencies. Never embed API keys or secrets.',
+    'Make it mobile-first, keyboard accessible, readable, and stable. Use large controls, large tap targets, strong contrast, minimal precision interaction, reduced-motion support, and confirmation for destructive actions.',
+    'If the approved specification involves Parkinson accessibility, prioritize tremor-friendly controls, minimal typing, one-tap actions and calm motion.',
+    'If the specification asks for server-only features such as secure multi-user authentication or shared cloud synchronization, do NOT pretend those exist. Build all features that can be genuinely implemented in a GitHub Pages system and clearly label any server-only dependency inside a small Settings/Connection area rather than faking it.',
+    'The page must include a real title, dashboard/status area appropriate to the requested system, search/filter where useful, record creation/editing where useful, timestamps, and print/export where useful.',
+    'Do not use the word prototype anywhere in the user interface.',
+    'APPROVED SYSTEM SPECIFICATION:',
+    JSON.stringify(system || {}, null, 2)
+  ].join('\n\n');
+
+  const body = {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: 'OBJECT',
+        properties: {
+          index_html: { type: 'STRING' },
+          system_notes: { type: 'STRING' }
+        },
+        required: ['index_html', 'system_notes']
+      },
+      temperature: 0.2,
+      maxOutputTokens: 32768
+    }
+  };
+
+  const response = UrlFetchApp.fetch(
+    'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent',
+    {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { 'x-goog-api-key': apiKey },
+      payload: JSON.stringify(body),
+      muteHttpExceptions: true
+    }
+  );
+
+  const code = response.getResponseCode();
+  const text = response.getContentText();
+  if (code < 200 || code >= 300) {
+    throw new Error('Gemini system generation failed (' + code + '). ' + text.slice(0, 700));
+  }
+
+  let data = {};
+  try { data = JSON.parse(text || '{}'); }
+  catch (_) { throw new Error('Gemini returned an unreadable response.'); }
+
+  const parts = data && data.candidates && data.candidates[0] && data.candidates[0].content &&
+    Array.isArray(data.candidates[0].content.parts) ? data.candidates[0].content.parts : [];
+  const generatedText = parts.map(function(part) { return String(part.text || ''); }).join('').trim();
+  if (!generatedText) throw new Error('Gemini returned no application files.');
+
+  let result = {};
+  try { result = JSON.parse(generatedText); }
+  catch (_) {
+    const cleaned = generatedText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
+    try { result = JSON.parse(cleaned); }
+    catch (err) { throw new Error('Gemini did not return the required application JSON.'); }
+  }
+  return result;
+}
+
+function validateGeneratedSystem_(generated) {
+  const html = String(generated && generated.index_html || '');
+  if (html.length < 2500) throw new Error('Generated application file is unexpectedly incomplete.');
+  if (!/<html[\s>]/i.test(html) || !/<script[\s>]/i.test(html) || !/<style[\s>]/i.test(html)) {
+    throw new Error('Generated application is missing required HTML, CSS, or JavaScript.');
+  }
+  if (/YOUR[_ -]?(API|KEY)|TODO|lorem ipsum/i.test(html)) {
+    throw new Error('Generated application still contains unfinished placeholders. Jazz refused to deploy it.');
+  }
+}
+
+function githubPutFile_(owner, repo, path, content, message, token) {
+  return githubRequest_('put', '/repos/' + encodeURIComponent(owner) + '/' + encodeURIComponent(repo) + '/contents/' + path.split('/').map(encodeURIComponent).join('/'), {
+    message: String(message || 'Update system file'),
+    content: Utilities.base64Encode(String(content || ''), Utilities.Charset.UTF_8)
+  }, token, [200, 201]);
+}
+
+function githubRequest_(method, path, body, token, allowedStatuses) {
+  const options = {
+    method: String(method || 'get').toLowerCase(),
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: 'Bearer ' + String(token || requiredProperty_('GITHUB_TOKEN')),
+      'X-GitHub-Api-Version': GITHUB_API_VERSION,
+      'User-Agent': 'Jazz-AI-Command-Center'
+    },
+    muteHttpExceptions: true
+  };
+  if (body !== undefined && body !== null && options.method !== 'get') {
+    options.contentType = 'application/json';
+    options.payload = JSON.stringify(body);
+  }
+  const response = UrlFetchApp.fetch('https://api.github.com' + path, options);
+  const code = response.getResponseCode();
+  const text = response.getContentText();
+  const allowed = Array.isArray(allowedStatuses) ? allowedStatuses : [200];
+  if (allowed.indexOf(code) === -1) {
+    throw new Error('GitHub API failed (' + code + '). ' + text.slice(0, 900));
+  }
+  if (!text) return {};
+  try { return JSON.parse(text); }
+  catch (_) { return { raw: text, status: code }; }
 }
 
 /* ========================= FACEBOOK PAGE ========================= */
