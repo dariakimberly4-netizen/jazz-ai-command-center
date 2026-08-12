@@ -2,20 +2,54 @@
   JAZZ AI — REAL SYSTEM Live Work layer
   --------------------------------------
   Truthful rules:
-  - Jazz never creates or labels a prototype as the finished result.
-  - An approved plan is not a created system.
-  - A REAL SYSTEM must have real files, a real data layer when needed,
-    working features, testing, deployment, and a verified HTTPS URL.
-  - Jazz only marks a system LIVE after that URL exists.
+  - Jazz never labels a prototype as a finished system.
+  - A real build runs through the private Apps Script backend.
+  - The backend generates real app files, creates a GitHub repository,
+    publishes GitHub Pages, and reports real build stages back to Jazz.
+  - Jazz only marks a system LIVE after the backend verifies the HTTPS URL.
 */
 (function () {
   'use strict';
+
+  var BUILD_URL_KEY = 'jazzRealBuilderUrl';
+  var LEGACY_BACKEND_URL_KEY = 'jazzWhatsAppFallbackUrl';
+  var watchers = {};
 
   function el(id) { return document.getElementById(id); }
   function esc(value) {
     return String(value == null ? '' : value).replace(/[&<>"']/g, function (c) {
       return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
     });
+  }
+
+  function backendConfig() {
+    var raw = localStorage.getItem(BUILD_URL_KEY) || localStorage.getItem(LEGACY_BACKEND_URL_KEY) || '';
+    if (!raw) return { endpoint: '', key: '' };
+    try {
+      var url = new URL(raw);
+      var key = url.searchParams.get('key') || '';
+      url.searchParams.delete('key');
+      return { endpoint: url.toString(), key: key };
+    } catch (_) {
+      return { endpoint: '', key: '' };
+    }
+  }
+
+  function builderConfigured() {
+    var cfg = backendConfig();
+    return Boolean(cfg.endpoint && cfg.key);
+  }
+
+  function configureBuilder(url) {
+    var clean = String(url || '').trim();
+    if (!/^https:\/\/script\.google\.com\/macros\/s\//i.test(clean)) {
+      throw new Error('Use your Apps Script Web App HTTPS URL.');
+    }
+    var parsed = new URL(clean);
+    var key = parsed.searchParams.get('key') || '';
+    if (key.length < 12) throw new Error('The private URL must include ?key=YOUR_PRIVATE_KEY.');
+    localStorage.setItem(BUILD_URL_KEY, clean);
+    return true;
   }
 
   function statusBanner(title, detail, live) {
@@ -40,67 +74,250 @@
     return '<button id="' + id + '" style="width:100%;min-height:66px;margin-top:12px;border:1px solid #d9bd7c;border-radius:18px;background:#34234f;color:#fff;font-weight:1000;font-size:1rem">' + esc(label) + '</button>';
   }
 
-  function builderConnected() {
-    return Boolean(window.JazzRealSystemBuilder && typeof window.JazzRealSystemBuilder.start === 'function');
+  var stageOrder = {
+    QUEUED: 0,
+    GENERATING: 1,
+    CREATING_REPOSITORY: 2,
+    UPLOADING_FILES: 3,
+    ENABLING_PAGES: 4,
+    DEPLOYING: 5,
+    LIVE: 6,
+    ERROR: -1
+  };
+
+  function stageState(system, stageNumber) {
+    var current = stageOrder[String(system.buildStage || '')];
+    if (current == null) return 'pending';
+    if (current === -1) return 'pending';
+    if (current > stageNumber) return 'done';
+    if (current === stageNumber) return 'working';
+    return 'pending';
   }
 
   function realWorkView(system) {
-    var connected = builderConnected();
+    var connected = builderConfigured();
     var wl = el('workList');
     if (!wl || !system) return;
 
+    var live = Boolean(system.live && /^https:\/\//i.test(String(system.live)));
+    var stage = String(system.buildStage || '');
+    var detail = String(system.buildDetail || '');
+    var title = live ? 'REAL SYSTEM LIVE' :
+      (stage === 'ERROR' ? 'BUILD NEEDS ATTENTION' :
+      (stage && stage !== 'QUEUED' ? 'BUILDING REAL SYSTEM' :
+      (connected ? 'READY TO BUILD REAL SYSTEM' : 'REAL SYSTEM BUILDER NOT CONNECTED')));
+    var subtitle = live ? 'Jazz verified the deployed HTTPS system.' :
+      (stage === 'ERROR' ? (detail || 'The real build stopped because an actual step failed.') :
+      (stage && stage !== 'QUEUED' ? (detail || 'Jazz is working through the real build pipeline.') :
+      (connected ? 'Private backend connected. Jazz can create files, GitHub repository and live deployment.' :
+      'Connect the secure Apps Script builder. Jazz will not substitute a prototype.')));
+
     wl.innerHTML =
-      statusBanner(
-        connected ? 'READY TO BUILD REAL SYSTEM' : 'REAL SYSTEM BUILDER NOT CONNECTED',
-        connected
-          ? 'Jazz is ready to create real files, data, features, tests and a deployed system.'
-          : 'Jazz will not substitute a prototype. Connect the secure Real System Builder before building.',
-        false
-      ) +
+      statusBanner(title, subtitle, live) +
       step('Understanding request', system.idea || system.name || 'Approved system request', 'done') +
       step('Planning system', 'Specification approved and saved', 'done') +
-      step('Creating real application files', connected ? 'Ready to start' : 'Waiting for secure Real System Builder', 'pending') +
-      step('Creating real data layer', connected ? 'Runs when the build starts' : 'Waiting for secure Real System Builder', 'pending') +
-      step('Connecting real features', connected ? 'Runs when the build starts' : 'Waiting for secure Real System Builder', 'pending') +
-      step('Testing real system', 'Must pass before deployment', 'pending') +
-      step('Deploying', 'Must produce a verified HTTPS URL before Jazz says LIVE', 'pending') +
-      (connected ? button('jazzBuildRealSystem', 'BUILD REAL SYSTEM NOW') : button('jazzConnectRealBuilder', 'CONNECT REAL SYSTEM BUILDER'));
+      step('Generating real application files', stage ? (stage === 'GENERATING' ? detail : 'Generated by the private AI builder') : 'Not started', stageState(system, 1)) +
+      step('Creating GitHub repository', stage === 'CREATING_REPOSITORY' ? detail : 'A real repository is created for this system', stageState(system, 2)) +
+      step('Uploading real application files', stage === 'UPLOADING_FILES' ? detail : 'Actual deployable files are written to GitHub', stageState(system, 3)) +
+      step('Enabling GitHub Pages', stage === 'ENABLING_PAGES' ? detail : 'Public HTTPS deployment is configured', stageState(system, 4)) +
+      step('Verifying deployment', stage === 'DEPLOYING' ? detail : (live ? 'Verified reachable HTTPS URL' : 'Jazz waits for the real page to become reachable'), live ? 'done' : stageState(system, 5));
+
+    if (live) {
+      wl.innerHTML += button('jazzOpenRealSystem', 'OPEN REAL SYSTEM');
+    } else if (!connected) {
+      wl.innerHTML += button('jazzConnectRealBuilder', 'CONNECT REAL SYSTEM BUILDER');
+    } else if (stage && stage !== 'ERROR' && stage !== 'LIVE') {
+      wl.innerHTML += button('jazzCheckRealBuild', 'CHECK REAL BUILD STATUS');
+    } else {
+      wl.innerHTML += button('jazzBuildRealSystem', stage === 'ERROR' ? 'RETRY REAL SYSTEM BUILD' : 'BUILD REAL SYSTEM NOW');
+    }
+
+    var open = el('jazzOpenRealSystem');
+    if (open) open.onclick = function () { window.open(system.live, '_blank', 'noopener'); };
 
     var build = el('jazzBuildRealSystem');
     if (build) {
       build.onclick = function () {
         build.disabled = true;
-        build.textContent = 'BUILDING REAL SYSTEM…';
+        build.textContent = 'STARTING REAL BUILD…';
         system.status = 'BUILDING — real system';
+        system.buildStage = 'QUEUED';
+        system.buildDetail = 'Sending the approved specification to the private builder.';
         system.updated = new Date().toLocaleDateString();
         if (typeof saveSystems === 'function') saveSystems();
+        realWorkView(system);
 
-        window.JazzRealSystemBuilder.start(system, {
-          onStage: function (stage, detail) {
-            if (typeof toast === 'function') toast(stage + ': ' + detail);
-          },
-          onLive: function (url) {
-            window.JazzBuildStatus.markLive(system.id, url);
-            realWorkView(system);
-          },
-          onError: function (message) {
-            system.status = 'BUILD ERROR — needs attention';
-            if (typeof saveSystems === 'function') saveSystems();
-            realWorkView(system);
-            if (typeof toast === 'function') toast(message || 'Real system build failed.');
-          }
-        });
+        window.JazzRealSystemBuilder.start(system, callbacksFor(system));
       };
     }
+
+    var check = el('jazzCheckRealBuild');
+    if (check) check.onclick = function () { window.JazzRealSystemBuilder.watch(system, callbacksFor(system)); };
 
     var connect = el('jazzConnectRealBuilder');
     if (connect) {
       connect.onclick = function () {
+        var existing = localStorage.getItem(LEGACY_BACKEND_URL_KEY) || '';
+        if (existing) {
+          try {
+            configureBuilder(existing);
+            if (typeof toast === 'function') toast('Using your existing private Apps Script backend for real builds.');
+            realWorkView(system);
+            return;
+          } catch (_) {}
+        }
         if (typeof nav === 'function') nav('connections');
-        if (typeof toast === 'function') toast('Connect the secure Real System Builder. Jazz will not build a prototype.');
+        if (typeof toast === 'function') toast('Add your private Apps Script Web App URL to connect the Real System Builder.');
       };
     }
   }
+
+  function callbacksFor(system) {
+    return {
+      onStage: function (stage, detail, data) {
+        system.buildStage = stage;
+        system.buildDetail = detail || '';
+        if (data && data.repo) system.repo = data.repo;
+        system.status = stage === 'ERROR' ? 'BUILD ERROR — needs attention' : 'BUILDING — real system';
+        system.updated = new Date().toLocaleDateString();
+        if (typeof saveSystems === 'function') saveSystems();
+        realWorkView(system);
+        if (typeof toast === 'function' && detail) toast(detail);
+      },
+      onLive: function (url, data) {
+        system.buildStage = 'LIVE';
+        system.buildDetail = 'Deployment verified.';
+        if (data && data.repo) system.repo = data.repo;
+        window.JazzBuildStatus.markLive(system.id, url);
+        realWorkView(system);
+        if (typeof speak === 'function') speak('Your real system is built, deployed, and live.');
+      },
+      onError: function (message) {
+        system.buildStage = 'ERROR';
+        system.buildDetail = message || 'Real system build failed.';
+        system.status = 'BUILD ERROR — needs attention';
+        if (typeof saveSystems === 'function') saveSystems();
+        realWorkView(system);
+        if (typeof toast === 'function') toast(system.buildDetail);
+      }
+    };
+  }
+
+  function safeCallbackName(id) {
+    return '__jazzBuild_' + String(id || 'x').replace(/[^A-Za-z0-9_]/g, '_') + '_' + Date.now();
+  }
+
+  function pollStatus(system, callbacks) {
+    var cfg = backendConfig();
+    if (!cfg.endpoint || !cfg.key) {
+      callbacks.onError('Real System Builder is not connected.');
+      return;
+    }
+    var id = String(system.id || '');
+    if (!id) {
+      callbacks.onError('System ID is missing.');
+      return;
+    }
+
+    clearTimeout(watchers[id]);
+    var cb = safeCallbackName(id);
+    var script = document.createElement('script');
+    var finished = false;
+
+    function cleanup() {
+      if (script.parentNode) script.parentNode.removeChild(script);
+      try { delete window[cb]; } catch (_) { window[cb] = undefined; }
+    }
+
+    window[cb] = function (data) {
+      finished = true;
+      cleanup();
+      data = data || {};
+      if (!data.ok) {
+        callbacks.onError(data.error || 'Could not read real build status.');
+        return;
+      }
+      var stage = String(data.stage || 'QUEUED');
+      var detail = String(data.detail || '');
+      callbacks.onStage(stage, detail, data);
+      if (stage === 'LIVE' && data.url) {
+        callbacks.onLive(String(data.url), data);
+        return;
+      }
+      if (stage === 'ERROR') {
+        callbacks.onError(detail || 'Real build failed.');
+        return;
+      }
+      watchers[id] = setTimeout(function () { pollStatus(system, callbacks); }, 2500);
+    };
+
+    script.onerror = function () {
+      cleanup();
+      if (!finished) watchers[id] = setTimeout(function () { pollStatus(system, callbacks); }, 4000);
+    };
+
+    script.src = cfg.endpoint + (cfg.endpoint.indexOf('?') === -1 ? '?' : '&') +
+      'action=buildStatus&key=' + encodeURIComponent(cfg.key) +
+      '&system_id=' + encodeURIComponent(id) +
+      '&callback=' + encodeURIComponent(cb) + '&_=' + Date.now();
+    document.body.appendChild(script);
+  }
+
+  function submitBuild(system, callbacks) {
+    var cfg = backendConfig();
+    if (!cfg.endpoint || !cfg.key) throw new Error('Real System Builder is not connected.');
+
+    var frame = el('jazzRealBuilderFrame');
+    if (!frame) {
+      frame = document.createElement('iframe');
+      frame.id = 'jazzRealBuilderFrame';
+      frame.name = 'jazzRealBuilderFrame';
+      frame.style.display = 'none';
+      document.body.appendChild(frame);
+    }
+
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.action = cfg.endpoint;
+    form.target = frame.name;
+    form.style.display = 'none';
+
+    function field(name, value) {
+      var input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = name;
+      input.value = value;
+      form.appendChild(input);
+    }
+
+    field('jazz_action', 'buildSystem');
+    field('key', cfg.key);
+    field('system_json', JSON.stringify({
+      id: system.id,
+      name: system.name || '',
+      idea: system.idea || '',
+      type: system.type || '',
+      spec: system.spec || system.plan || '',
+      raw: system
+    }));
+
+    document.body.appendChild(form);
+    callbacks.onStage('QUEUED', 'Build request sent to the private backend.');
+    form.submit();
+    form.remove();
+    watchers[String(system.id)] = setTimeout(function () { pollStatus(system, callbacks); }, 1200);
+  }
+
+  window.JazzRealSystemBuilder = {
+    isConfigured: builderConfigured,
+    configure: configureBuilder,
+    start: function (system, callbacks) {
+      try { submitBuild(system, callbacks); }
+      catch (err) { callbacks.onError(String(err && err.message ? err.message : err)); }
+    },
+    watch: function (system, callbacks) { pollStatus(system, callbacks); },
+    status: function () { return { configured: builderConfigured() }; }
+  };
 
   function migrateOldStatuses() {
     if (typeof systems === 'undefined' || !Array.isArray(systems)) return;
@@ -110,6 +327,7 @@
       if (s.live) {
         if (s.status !== 'LIVE — real system deployed') {
           s.status = 'LIVE — real system deployed';
+          s.buildStage = 'LIVE';
           changed = true;
         }
         return;
@@ -125,12 +343,11 @@
 
   function enhancedApprove(event) {
     if (typeof draftSystem === 'undefined' || !draftSystem) return;
-
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
 
-    draftSystem.status = builderConnected() ? 'READY — real system build' : 'NOT CREATED — real builder required';
+    draftSystem.status = builderConfigured() ? 'READY — real system build' : 'NOT CREATED — real builder required';
     draftSystem.live = draftSystem.live || '';
     draftSystem.updated = new Date().toLocaleDateString();
     systems.unshift(draftSystem);
@@ -141,12 +358,12 @@
 
     var spec = el('specBox');
     if (spec) {
-      spec.innerHTML = '<div class="spec"><div class="eyebrow">PLAN APPROVED</div><h3>REAL SYSTEM ONLY</h3><p>Jazz will create the actual working system, not a prototype.</p><p class="honest">It will only be marked LIVE after deployment returns a real verified HTTPS link.</p></div>';
+      spec.innerHTML = '<div class="spec"><div class="eyebrow">PLAN APPROVED</div><h3>REAL SYSTEM ONLY</h3><p>Jazz will build the actual working system through the private backend and GitHub.</p><p class="honest">It will only be marked LIVE after the deployed HTTPS page is verified.</p></div>';
     }
 
     if (typeof nav === 'function') nav('work');
     realWorkView(system);
-    if (typeof speak === 'function') speak('Approved. Jazz will build a real system only. I will not call a prototype finished.');
+    if (typeof speak === 'function') speak('Approved. Jazz will build a real deployed system only.');
   }
 
   document.addEventListener('click', function (event) {
@@ -163,7 +380,9 @@
     }
     if (s) realWorkView(s);
     if (typeof nav === 'function') nav('work');
-    if (typeof toast === 'function') toast('NOT LIVE YET — Jazz requires a real deployed system and verified URL.');
+    if (s && /BUILDING/i.test(String(s.status || '')) && builderConfigured()) {
+      window.JazzRealSystemBuilder.watch(s, callbacksFor(s));
+    }
   };
 
   window.JazzBuildStatus = {
@@ -175,6 +394,7 @@
       if (!found) throw new Error('System not found.');
       found.live = clean;
       found.status = 'LIVE — real system deployed';
+      found.buildStage = 'LIVE';
       found.updated = new Date().toLocaleDateString();
       if (typeof saveSystems === 'function') saveSystems();
       if (typeof toast === 'function') toast('REAL SYSTEM VERIFIED LIVE.');
