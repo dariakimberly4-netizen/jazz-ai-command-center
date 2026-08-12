@@ -1,0 +1,41 @@
+name: Enable truthful Live Work in Jazz
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/inject-live-work.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-index:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Jazz
+        uses: actions/checkout@v4
+
+      - name: Load Live Work enhancement
+        shell: bash
+        run: |
+          if grep -q 'live-work-enhancement.js' index.html; then
+            echo 'Live Work enhancement is already loaded.'
+            exit 0
+          fi
+          perl -0pi -e 's#</body>#  <script src="live-work-enhancement.js"></script>\n</body>#' index.html
+          grep -q 'live-work-enhancement.js' index.html
+
+      - name: Commit integration
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'No change needed.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git commit -m 'Enable truthful Live Work build status'
+          git push
