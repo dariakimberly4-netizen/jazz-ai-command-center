@@ -21,3 +21,18 @@ console.info('Jazz WhatsApp fallback is handled by whatsapp-fallback-client.js.'
   script.dataset.jazzAgentEngine = 'true';
   document.head.appendChild(script);
 })();
+
+(function loadJazzSupabaseCloud(){
+  if (document.querySelector('script[data-jazz-supabase-lib]')) return;
+  const lib = document.createElement('script');
+  lib.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+  lib.dataset.jazzSupabaseLib = 'true';
+  lib.onload = function(){
+    if (document.querySelector('script[data-jazz-supabase-cloud]')) return;
+    const cloud = document.createElement('script');
+    cloud.src = 'jazz-supabase.js';
+    cloud.dataset.jazzSupabaseCloud = 'true';
+    document.head.appendChild(cloud);
+  };
+  document.head.appendChild(lib);
+})();
