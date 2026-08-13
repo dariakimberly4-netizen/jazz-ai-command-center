@@ -1,10 +1,8 @@
 /* Compatibility loader.
-   The active Jazz WhatsApp fallback is handled by whatsapp-fallback-client.js
-   plus the private Google Apps Script backend in google-apps-script/Code.gs.
-   This file also loads the safe Facebook Page connection UI without placing
-   Meta secrets or Page access tokens in GitHub Pages.
+   Jazz uses the private Google Apps Script backend for connected services.
+   No Supabase runtime or Supabase credentials are loaded by Jazz.
 */
-console.info('Jazz WhatsApp fallback is handled by whatsapp-fallback-client.js.');
+console.info('Jazz connected services use the private Google Apps Script backend.');
 
 (function loadJazzFacebookConnector(){
   if (document.querySelector('script[data-jazz-facebook]')) return;
@@ -22,17 +20,10 @@ console.info('Jazz WhatsApp fallback is handled by whatsapp-fallback-client.js.'
   document.head.appendChild(script);
 })();
 
-(function loadJazzSupabaseCloud(){
-  if (document.querySelector('script[data-jazz-supabase-lib]')) return;
-  const lib = document.createElement('script');
-  lib.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.111.0';
-  lib.dataset.jazzSupabaseLib = 'true';
-  lib.onload = function(){
-    if (document.querySelector('script[data-jazz-supabase-cloud]')) return;
-    const cloud = document.createElement('script');
-    cloud.src = 'jazz-supabase.js';
-    cloud.dataset.jazzSupabaseCloud = 'true';
-    document.head.appendChild(cloud);
-  };
-  document.head.appendChild(lib);
+(function loadJazzAppsScriptAgents(){
+  if (document.querySelector('script[data-jazz-apps-script-agents]')) return;
+  const script = document.createElement('script');
+  script.src = 'jazz-apps-script-agents.js';
+  script.dataset.jazzAppsScriptAgents = 'true';
+  document.head.appendChild(script);
 })();
