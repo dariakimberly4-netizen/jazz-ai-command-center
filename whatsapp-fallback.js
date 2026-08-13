@@ -13,3 +13,11 @@ console.info('Jazz WhatsApp fallback is handled by whatsapp-fallback-client.js.'
   script.dataset.jazzFacebook = 'true';
   document.head.appendChild(script);
 })();
+
+(function loadJazzWorkingAgents(){
+  if (document.querySelector('script[data-jazz-agent-engine]')) return;
+  const script = document.createElement('script');
+  script.src = 'jazz-agent-engine.js';
+  script.dataset.jazzAgentEngine = 'true';
+  document.head.appendChild(script);
+})();
