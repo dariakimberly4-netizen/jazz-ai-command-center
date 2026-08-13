@@ -25,7 +25,7 @@ console.info('Jazz WhatsApp fallback is handled by whatsapp-fallback-client.js.'
 (function loadJazzSupabaseCloud(){
   if (document.querySelector('script[data-jazz-supabase-lib]')) return;
   const lib = document.createElement('script');
-  lib.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+  lib.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.111.0';
   lib.dataset.jazzSupabaseLib = 'true';
   lib.onload = function(){
     if (document.querySelector('script[data-jazz-supabase-cloud]')) return;
