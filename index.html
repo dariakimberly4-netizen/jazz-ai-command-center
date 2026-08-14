@@ -83,7 +83,7 @@
     const k=document.createElement('button');k.className='agent kimara deployed';k.style.setProperty('--a','330deg');k.dataset.icon='✦';k.innerHTML='KIMARA<br><small>AMBASSADOR</small>';k.onclick=()=>nav('kimaraVault');agents.appendChild(k);
     function period(){const h=new Date().getHours();return h<12?'morning':h<18?'afternoon':'evening'}
     function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),3000)}
-    function speak(t){if(!('speechSynthesis'in window))return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);const vs=speechSynthesis.getVoices();u.voice=vs.find(v=>/fil-PH|en-PH/i.test(v.lang)&&/female|filipina|google|microsoft/i.test(v.name))||vs.find(v=>/fil-PH|en-PH/i.test(v.lang))||vs.find(v=>/female|samantha|zira/i.test(v.name))||vs[0];u.lang=(u.voice&&u.voice.lang)||'fil-PH';u.rate=.9;u.pitch=1.04;u.onstart=()=>{speaking=true;if(!$('#music').paused)$('#music').volume=.12};u.onend=()=>{speaking=false;if(!$('#music').paused)$('#music').volume=.4};speechSynthesis.speak(u)}
+    function speak(t){if(!('speechSynthesis'in window))return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);const vs=speechSynthesis.getVoices();u.voice=vs.find(v=>/fil-PH/i.test(v.lang)&&/Blessica|Rosa|female|filipina/i.test(v.name))||vs.find(v=>/Blessica|Rosa/i.test(v.name))||vs.find(v=>/fil-PH|en-PH/i.test(v.lang)&&!/Angelo|male/i.test(v.name))||vs.find(v=>/female|Samantha|Zira/i.test(v.name))||vs[0];u.lang=(u.voice&&u.voice.lang)||'fil-PH';u.rate=.9;u.pitch=1.04;u.onstart=()=>{speaking=true;if(!$('#music').paused)$('#music').volume=.12};u.onend=()=>{speaking=false;if(!$('#music').paused)$('#music').volume=.4};speechSynthesis.speak(u)}
     function deploy(){timers.forEach(clearTimeout);$$('.agent:not(.kimara)').forEach((a,i)=>timers.push(setTimeout(()=>a.classList.add('deployed'),i*170)));toast('Deploying 11 agents.');speak('Deploying all eleven agents. They are ready for your instructions.')}
     function start(){const home=$('#home');if(home.classList.contains('deploying')||home.classList.contains('started'))return;home.classList.add('deploying');const t='Good morning, Kimmy. Deploying the 11 agents now.';toast(t);speak(t);$('#orb span').textContent='DEPLOYING AGENTS';deploy();const delay=document.body.classList.contains('reduce')?0:(names.length*170+450);setTimeout(()=>{home.classList.remove('deploying');home.classList.add('agents-ready','started');document.body.classList.add('command-open');$('#orb span').textContent='COMMAND CENTER';scrollTo({top:0,behavior:'auto'});toast('The 11 agents and Kimara are ready.')},delay)}
     function nav(id){$$('.view').forEach(v=>v.classList.toggle('active',v.id===id));$$('nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===id));scrollTo({top:0,behavior:document.body.classList.contains('reduce')?'auto':'smooth'})}
@@ -132,9 +132,9 @@
     $('#musicBtn').onclick=()=>{const m=$('#music');if(m.src){if(m.paused){m.play();$('#musicBtn').textContent='❚❚'}else{m.pause();$('#musicBtn').textContent='♫'}}else $('#musicFile').click()};
     $('#musicFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const m=$('#music');m.src=URL.createObjectURL(f);m.volume=.4;m.play();$('#musicBtn').textContent='❚❚';toast('Your legally provided music is playing.')};
   </script>
-  <script src="jazz-agent-engine.js?v=12" data-jazz-agent-engine></script>
-  <script src="jazz-apps-script-agents.js?v=12" data-jazz-apps-script-agents></script>
-  <script src="whatsapp-fallback.js?v=12"></script>
+  <script src="jazz-agent-engine.js?v=13" data-jazz-agent-engine></script>
+  <script src="jazz-apps-script-agents.js?v=13" data-jazz-apps-script-agents></script>
+  <script src="whatsapp-fallback.js?v=13"></script>
   <script src="live-work-enhancement.js"></script>
 </body>
 </html>
