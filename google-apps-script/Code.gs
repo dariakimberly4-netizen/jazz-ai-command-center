@@ -54,6 +54,11 @@ function doGet(e) {
   try {
     const action = e && e.parameter ? String(e.parameter.action || '') : '';
 
+    if (action === 'agentStatus' || action === 'agentTask' || action === 'agentTasks') {
+      requirePresenceKey_(e, {});
+      return jazzAgentHandleGet_(e);
+    }
+
     if (action === 'buildStatus') {
       requirePresenceKey_(e, {});
       return realSystemBuildStatusJsonp_(e);
@@ -134,6 +139,11 @@ function doPost(e) {
     requirePresenceKey_(e, payload);
 
     const action = String(payload.action || '');
+
+    if (action === 'agentRun' || action === 'agentDecision') {
+      return jazzAgentHandlePost_(payload);
+    }
+
     const now = new Date();
     const p = props_();
 
