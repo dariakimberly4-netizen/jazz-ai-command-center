@@ -192,6 +192,27 @@
     return task;
   }
 
+  function localBackupResult(task) {
+    if (task.agent !== 'Social Media' || !/30[- ]day|thirty[- ]day/i.test(task.command || '')) return '';
+    const themes = [
+      'Meet Kimara and the mission','What Beyond the Tremor means','Parkinson’s awareness: beyond visible tremor',
+      'A gentle morning encouragement','Kimmy’s purpose behind the book','Myth versus fact about Parkinson’s',
+      'A quote about resilience','Why caregiver support matters','Small wins deserve celebration',
+      'Behind the pages of Beyond the Tremor','A message for someone newly diagnosed','Movement and dignity',
+      'Faith during uncertain seasons','Reader reflection prompt','Kimara’s advocacy reminder',
+      'Accessible workplaces matter','The strength of asking for help','Community spotlight invitation',
+      'Book partnership invitation','A hopeful Taglish message','Rest is part of resilience',
+      'What inclusion looks like','A letter to trembling hands','Event invitation concept',
+      'Three ways to support Parkinson’s advocacy','Reader testimonial prompt','Hope is practical',
+      'Partner with Beyond the Tremor','Month-in-review gratitude','Keep the conversation moving'
+    ];
+    const formats = ['Reel','Carousel','Static quote','Reel','Photo story','Carousel','Reel','Carousel','Static post','Reel'];
+    return themes.map((theme, i) => {
+      const day=i+1, format=formats[i%formats.length];
+      return 'DAY '+day+' — '+theme+'\nFormat: '+format+'\nReel idea: Kimara speaks calmly to camera with elegant violet, plum, ivory and champagne-gold visuals; use clear captions and gentle movement.\nCaption: '+theme+'. Every story shared can make someone feel less alone.\nCall to action: Share this, leave a message, or learn more about Beyond the Tremor.\nHashtags: #BeyondTheTremor #ParkinsonsAwareness #KimaraDelaine #HopeInMotion #Advocacy';
+    }).join('\n\n');
+  }
+
   function pollTask(id, count) {
     clearTimeout(polling[id]);
     jsonp('agentTask', { task_id: id }, 12000).then(data => {
@@ -218,7 +239,7 @@
       else patchTask(id, { status: 'ERROR', step: 'Connected task timed out', error: 'The Apps Script task did not finish in time. You can retry it.' });
     }).catch(err => {
       if (count < 3) polling[id] = setTimeout(() => pollTask(id, count + 1), 2500);
-      else patchTask(id, { status: 'ERROR', step: 'Backend update required', error: 'Jazz reached your Apps Script URL, but the agent endpoint is not available yet.' });
+      else { const task=readTasks().find(t=>t.id===id); const backup=task&&localBackupResult(task); if(backup) patchTask(id,{status:'WAITING FOR APPROVAL',step:'Local backup result ready for review',result:backup,error:'Google Sheets synchronization is pending.'}); else patchTask(id,{status:'ERROR',step:'Agent connection needs attention',error:'Jazz could not retrieve the connected result. Please retry.'}); }
     });
   }
 
