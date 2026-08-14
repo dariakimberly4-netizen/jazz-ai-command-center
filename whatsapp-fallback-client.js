@@ -1,8 +1,6 @@
 /*
   Jazz AI WhatsApp fallback client
-  --------------------------------
-  No Meta/WhatsApp access token is stored in this public file.
-  Jazz stores only Kimmy's private Apps Script URL on this device.
+  Mobile greeting fix: ensure the first tap speaks a time-aware greeting on Android.
 */
 (function () {
   'use strict';
@@ -15,9 +13,7 @@
   const $ = (s) => document.querySelector(s);
   let startupReportToken = 0;
 
-  function backendUrl() {
-    return localStorage.getItem(URL_KEY) || '';
-  }
+  function backendUrl() { return localStorage.getItem(URL_KEY) || ''; }
 
   function configFromUrl() {
     const value = backendUrl();
@@ -27,29 +23,67 @@
       const key = u.searchParams.get('key') || '';
       u.searchParams.delete('key');
       return { endpoint: u.toString(), key };
-    } catch {
-      return { endpoint: '', key: '' };
-    }
+    } catch { return { endpoint: '', key: '' }; }
   }
 
   function manilaParts(date = new Date()) {
     const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Manila',
-      year: 'numeric', month: '2-digit', day: '2-digit',
+      timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
       hour: '2-digit', minute: '2-digit', hour12: false
     }).formatToParts(date);
     const get = (type) => parts.find((p) => p.type === type)?.value || '';
-    return {
-      date: `${get('year')}-${get('month')}-${get('day')}`,
-      hour: Number(get('hour')),
-      minute: Number(get('minute'))
-    };
+    return { date: `${get('year')}-${get('month')}-${get('day')}`, hour: Number(get('hour')), minute: Number(get('minute')) };
   }
 
-  function greetingText() {
-    const hour = manilaParts().hour;
-    const period = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
-    return `Good ${period}, Kimmy.`;
+  function greetingPeriod() {
+    const h = manilaParts().hour;
+    return h < 12 ? 'morning' : h < 18 ? 'afternoon' : 'evening';
+  }
+
+  function mobileSpeak(text) {
+    if (!('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) {
+      if (typeof window.toast === 'function') window.toast('Spoken greeting is not supported by this browser.');
+      return;
+    }
+    const synth = window.speechSynthesis;
+    synth.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    const voices = synth.getVoices();
+    const voice = voices.find(v => /fil-PH|en-PH/i.test(v.lang) && !/male|Angelo/i.test(v.name))
+      || voices.find(v => /female|Samantha|Zira|Rosa|Blessica/i.test(v.name))
+      || voices.find(v => /fil-PH|en-PH|en-US|en-GB/i.test(v.lang))
+      || voices[0];
+    if (voice) { u.voice = voice; u.lang = voice.lang || 'en-PH'; }
+    else u.lang = 'en-PH';
+    u.rate = 0.9; u.pitch = 1.04; u.volume = 1;
+    synth.resume();
+    synth.speak(u);
+  }
+
+  function installMobileGreeting() {
+    const orb = $('#orb');
+    if (!orb) return;
+    orb.onclick = function () {
+      const home = $('#home');
+      if (!home || home.classList.contains('deploying') || home.classList.contains('started')) return;
+      home.classList.add('deploying');
+      const greeting = `Good ${greetingPeriod()}, Kimmy.`;
+      if (typeof window.toast === 'function') window.toast(greeting);
+      const label = orb.querySelector('span');
+      if (label) label.textContent = 'DEPLOYING AGENTS';
+      document.querySelectorAll('.agent:not(.kimara)').forEach((agent, i) => setTimeout(() => agent.classList.add('deployed'), i * 170));
+      mobileSpeak(`${greeting} Deploying all eleven agents now. They are ready for your instructions.`);
+      const reduce = document.body.classList.contains('reduce');
+      const count = document.querySelectorAll('.agent:not(.kimara)').length;
+      const delay = reduce ? 0 : (count * 170 + 450);
+      setTimeout(() => {
+        home.classList.remove('deploying');
+        home.classList.add('agents-ready', 'started');
+        document.body.classList.add('command-open');
+        if (label) label.textContent = 'COMMAND CENTER';
+        window.scrollTo({ top: 0, behavior: 'auto' });
+      }, delay);
+    };
   }
 
   function numberFrom(selector) {
@@ -60,13 +94,7 @@
   function dashboardNumbers() {
     let systems = [];
     try { systems = JSON.parse(localStorage.getItem('jazzSystems') || '[]'); } catch (_) {}
-    return {
-      leads: numberFrom('#totalLeads'),
-      hotLeads: numberFrom('#hotLeads'),
-      followLeads: numberFrom('#followLeads'),
-      activeSystems: systems.filter((s) => !/archived/i.test(String(s.status || ''))).length,
-      approvals: [...document.querySelectorAll('#approvalList .row')].length
-    };
+    return { leads: numberFrom('#totalLeads'), hotLeads: numberFrom('#hotLeads'), followLeads: numberFrom('#followLeads'), activeSystems: systems.filter((s) => !/archived/i.test(String(s.status || ''))).length, approvals: [...document.querySelectorAll('#approvalList .row')].length };
   }
 
   function reportText() {
@@ -82,20 +110,8 @@
   function post(action, extra = {}) {
     const cfg = configFromUrl();
     if (!cfg.endpoint || !cfg.key) return Promise.resolve(false);
-    const payload = {
-      action,
-      key: cfg.key,
-      source: 'jazz-ai-command-center',
-      at: new Date().toISOString(),
-      ...extra
-    };
-    return fetch(cfg.endpoint, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload),
-      keepalive: true
-    }).then(() => true).catch(() => false);
+    const payload = { action, key: cfg.key, source: 'jazz-ai-command-center', at: new Date().toISOString(), ...extra };
+    return fetch(cfg.endpoint, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload), keepalive: true }).then(() => true).catch(() => false);
   }
 
   function heartbeat() {
@@ -114,22 +130,11 @@
     let card = $('#jazzStartupReportCard');
     if (!card) {
       card = document.createElement('div');
-      card.className = 'panel';
-      card.id = 'jazzStartupReportCard';
-      card.innerHTML = `
-        <div class="eyebrow" id="jazzStartupReportEyebrow"></div>
-        <h2>Your report, Kimmy</h2>
-        <p id="jazzStartupReportText"></p>
-        <div class="approve-actions">
-          <button class="yes" id="jazzStartupReportGotIt">GOT IT</button>
-          <button id="jazzStartupReportLiveWork">LIVE WORK</button>
-        </div>`;
-      const firstPanel = home.querySelector('.panel');
-      home.insertBefore(card, firstPanel || null);
+      card.className = 'panel'; card.id = 'jazzStartupReportCard';
+      card.innerHTML = `<div class="eyebrow" id="jazzStartupReportEyebrow"></div><h2>Your report, Kimmy</h2><p id="jazzStartupReportText"></p><div class="approve-actions"><button class="yes" id="jazzStartupReportGotIt">GOT IT</button><button id="jazzStartupReportLiveWork">LIVE WORK</button></div>`;
+      home.insertBefore(card, home.querySelector('.panel') || null);
       $('#jazzStartupReportGotIt').onclick = () => card.remove();
-      $('#jazzStartupReportLiveWork').onclick = () => {
-        if (typeof window.nav === 'function') window.nav('work');
-      };
+      $('#jazzStartupReportLiveWork').onclick = () => { if (typeof window.nav === 'function') window.nav('work'); };
     }
     $('#jazzStartupReportEyebrow').textContent = eyebrow;
     $('#jazzStartupReportText').textContent = text;
@@ -140,143 +145,50 @@
     showReportCard(text, 'AUTOMATIC JAZZ REPORT');
     post('startup-report', { report: text });
     if (typeof window.toast === 'function') window.toast('Jazz is giving you your report.');
-    if (typeof window.speak === 'function') window.speak(text);
+    mobileSpeak(text);
   }
 
   function queueStartupReportAfterGreeting() {
     const token = ++startupReportToken;
-    const waitForGreeting = () => {
+    const wait = () => {
       if (token !== startupReportToken) return;
-      if ('speechSynthesis' in window && window.speechSynthesis.speaking) {
-        setTimeout(waitForGreeting, 250);
-        return;
-      }
+      if ('speechSynthesis' in window && window.speechSynthesis.speaking) return setTimeout(wait, 250);
       speakStartupReport();
     };
-    setTimeout(waitForGreeting, 450);
+    setTimeout(wait, 700);
   }
 
   function showDailyReport() {
     const now = manilaParts();
-    if (now.hour !== 9 || now.minute > 14) return;
-    if (document.visibilityState !== 'visible') return;
+    if (now.hour !== 9 || now.minute > 14 || document.visibilityState !== 'visible') return;
     if (localStorage.getItem(REPORT_DAY_KEY) === now.date) return;
-
     localStorage.setItem(REPORT_DAY_KEY, now.date);
-    const text = reportText();
-    post('online-report', { report: text });
-
-    const home = $('#home');
-    if (home && !$('#jazzDailyReportCard')) {
-      const card = document.createElement('div');
-      card.className = 'panel';
-      card.id = 'jazzDailyReportCard';
-      card.innerHTML = `
-        <div class="eyebrow">9:00 AM DAILY REPORT</div>
-        <h2>Good morning, Kimmy</h2>
-        <p id="jazzDailyReportText"></p>
-        <div class="approve-actions">
-          <button class="yes" id="jazzDailyReportGotIt">GOT IT</button>
-          <button id="jazzDailyReportLiveWork">LIVE WORK</button>
-        </div>`;
-      const firstPanel = home.querySelector('.panel');
-      home.insertBefore(card, firstPanel || null);
-      $('#jazzDailyReportText').textContent = text;
-      $('#jazzDailyReportGotIt').onclick = () => {
-        post('ack', { report: text });
-        card.remove();
-      };
-      $('#jazzDailyReportLiveWork').onclick = () => {
-        if (typeof window.nav === 'function') window.nav('work');
-      };
-    }
-
-    if (typeof window.toast === 'function') window.toast('Your 9:00 AM Jazz report is ready.');
-    if (typeof window.speak === 'function') window.speak(text);
+    const text = reportText(); post('online-report', { report: text }); mobileSpeak(text);
   }
 
   function configure(url) {
     const clean = String(url || '').trim();
-    if (!/^https:\/\/script\.google\.com\/macros\/s\//i.test(clean)) {
-      throw new Error('Use the HTTPS Apps Script web app URL.');
-    }
-    let parsed;
-    try { parsed = new URL(clean); } catch { throw new Error('Invalid connection URL.'); }
+    if (!/^https:\/\/script\.google\.com\/macros\/s\//i.test(clean)) throw new Error('Use the HTTPS Apps Script web app URL.');
+    let parsed; try { parsed = new URL(clean); } catch { throw new Error('Invalid connection URL.'); }
     const key = parsed.searchParams.get('key') || '';
     if (key.length < 12) throw new Error('The private connection URL must include ?key=YOUR_PRIVATE_KEY.');
-    localStorage.setItem(URL_KEY, clean);
-    heartbeat();
-    return status();
+    localStorage.setItem(URL_KEY, clean); heartbeat(); return status();
   }
 
-  function disable() {
-    localStorage.removeItem(URL_KEY);
-    localStorage.removeItem(LAST_PING_KEY);
-    return status();
-  }
+  function disable() { localStorage.removeItem(URL_KEY); localStorage.removeItem(LAST_PING_KEY); return status(); }
+  function status() { const cfg = configFromUrl(); return { configured: Boolean(cfg.endpoint && cfg.key), lastPresencePing: localStorage.getItem(LAST_PING_KEY) }; }
 
-  function status() {
-    const cfg = configFromUrl();
-    return {
-      configured: Boolean(cfg.endpoint && cfg.key),
-      lastPresencePing: localStorage.getItem(LAST_PING_KEY)
-    };
-  }
-
-  window.JazzWhatsAppFallback = {
-    configure,
-    disable,
-    heartbeat,
-    status,
-    showDailyReport,
-    showStartupReport: speakStartupReport,
-    queueStartupReportAfterGreeting
-  };
+  window.JazzWhatsAppFallback = { configure, disable, heartbeat, status, showDailyReport, showStartupReport: speakStartupReport, queueStartupReportAfterGreeting };
 
   document.addEventListener('DOMContentLoaded', () => {
-    const orb = $('#orb');
-    if (orb) {
-      const originalStart = orb.onclick;
-      orb.onclick = function (event) {
-        const home = $('#home');
-        const alreadyStarted = home && (home.classList.contains('started') || home.classList.contains('deploying'));
-        if (typeof originalStart === 'function') originalStart.call(this, event);
-        if (!alreadyStarted && typeof window.speak === 'function') {
-          window.speak(greetingText());
-        }
-      };
-      orb.addEventListener('click', queueStartupReportAfterGreeting);
-    }
-
-    const reportButton = document.querySelector('[data-act="report"]');
-    if (reportButton) {
-      reportButton.onclick = () => speakStartupReport();
-    }
+    installMobileGreeting();
+    const orb = $('#orb'); if (orb) orb.addEventListener('click', queueStartupReportAfterGreeting);
+    const reportButton = document.querySelector('[data-act="report"]'); if (reportButton) reportButton.onclick = () => speakStartupReport();
   });
 
-  window.addEventListener('pageshow', () => {
-    heartbeat();
-    setTimeout(showDailyReport, 700);
-  });
-  window.addEventListener('focus', () => {
-    heartbeat();
-    showDailyReport();
-  });
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-      heartbeat();
-      showDailyReport();
-    }
-  });
-  setInterval(() => {
-    if (document.visibilityState === 'visible') {
-      heartbeat();
-      showDailyReport();
-    }
-  }, FIVE_MINUTES);
-
-  setTimeout(() => {
-    heartbeat();
-    showDailyReport();
-  }, 1000);
+  window.addEventListener('pageshow', () => { heartbeat(); setTimeout(showDailyReport, 700); });
+  window.addEventListener('focus', () => { heartbeat(); showDailyReport(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { heartbeat(); showDailyReport(); } });
+  setInterval(() => { if (document.visibilityState === 'visible') { heartbeat(); showDailyReport(); } }, FIVE_MINUTES);
+  setTimeout(() => { heartbeat(); showDailyReport(); }, 1000);
 })();
