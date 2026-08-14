@@ -91,7 +91,7 @@
     function openTalk(){const m=$('#music');if(!m.paused)m.volume=.12;$('#talkbox').classList.add('open')}
     function closeTalk(){$('#talkbox').classList.remove('open');if(!$('#music').paused&&!speaking)$('#music').volume=.4}
     function work(command){const wl=$('#workList');if(wl.querySelector('.empty'))wl.innerHTML='';const now=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});const r=document.createElement('div');r.className='row';r.innerHTML=`<span class="dot"></span><div><strong>Instruction received</strong><small>${command}<br>${now} • Waiting for a connected service or your next input</small></div>`;wl.prepend(r);nav('work');toast('Added to Live Work.');speak('I added that instruction to Live Work. One next step: connect the service needed to complete it.')}
-    function submit(){const c=$('#command').value.trim();if(!c)return toast('Please give Jazz an instruction.');closeTalk();work(c);$('#command').value=''}
+    function submit(){const c=$('#command').value.trim();if(!c)return toast('Please give Jazz an instruction.');if(/\byoutube\b/i.test(c)){const q=c.replace(/^Ask\s+.+?\s+to\s+/i,'').replace(/^(please\s+)?(open\s+)?youtube(\s+and)?\s*/i,'').replace(/^(play|search(\s+for)?)\s*/i,'').trim()||c;closeTalk();window.open('https://www.youtube.com/results?search_query='+encodeURIComponent(q),'_blank','noopener');toast('Opening YouTube for '+q+'. Tap the video to play.');return}closeTalk();work(c);$('#command').value=''}
     function safe(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
     function renderLeads(){const q=$('#leadSearch').value.trim().toLowerCase();const rows=leadData.filter(l=>{const p=String(l.Priority||'');const match=leadFilter==='All'||p.startsWith(leadFilter);return match&&Object.values(l).some(v=>String(v).toLowerCase().includes(q))});const show=rows.slice(0,40);$('#crmList').innerHTML=show.length?show.map(l=>`<div class="row lead-card"><div class="lead-top"><div><strong>${safe(l.Organization)}</strong><small>${safe(l['Category']||'Uncategorized')} • ${safe(l['City / Area']||'Location not listed')}</small></div><span class="priority">${safe(l.Priority||'Unclassified')}</span></div><p>${safe(l['Contact Person / Leader']||'Contact person not yet verified')}${l['Role / Department']?' — '+safe(l['Role / Department']):''}</p><small>${safe(l['Outreach Status']||'No status')} • ${safe(l.Verification||'Needs verification')}</small><div class="lead-actions">${l.Email?`<button onclick="location.href='mailto:${safe(l.Email)}'">EMAIL</button>`:''}<button onclick="showLead('${safe(l['Lead ID'])}')">DETAILS</button></div></div>`).join(''):'<div class="empty">No matching leads.</div>';$('#leadCount').textContent=rows.length>40?`Showing 40 of ${rows.length} matching leads`:`${rows.length} matching leads`;$('#followLeads').textContent=leadData.filter(l=>/follow/i.test(String(l['Outreach Status'])+' '+String(l['Next Action']))).length}
     window.showLead=id=>{const l=leadData.find(x=>String(x['Lead ID'])===id);if(!l)return;const text=[l.Organization,l['Contact Person / Leader'],l.Email,l.Phone,l['Next Action']].filter(Boolean).join(' • ');toast(text)};
@@ -132,9 +132,9 @@
     $('#musicBtn').onclick=()=>{const m=$('#music');if(m.src){if(m.paused){m.play();$('#musicBtn').textContent='❚❚'}else{m.pause();$('#musicBtn').textContent='♫'}}else $('#musicFile').click()};
     $('#musicFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const m=$('#music');m.src=URL.createObjectURL(f);m.volume=.4;m.play();$('#musicBtn').textContent='❚❚';toast('Your legally provided music is playing.')};
   </script>
-  <script src="jazz-agent-engine.js?v=13" data-jazz-agent-engine></script>
-  <script src="jazz-apps-script-agents.js?v=13" data-jazz-apps-script-agents></script>
-  <script src="whatsapp-fallback.js?v=13"></script>
+  <script src="jazz-agent-engine.js?v=14" data-jazz-agent-engine></script>
+  <script src="jazz-apps-script-agents.js?v=14" data-jazz-apps-script-agents></script>
+  <script src="whatsapp-fallback.js?v=14"></script>
   <script src="live-work-enhancement.js"></script>
 </body>
 </html>
