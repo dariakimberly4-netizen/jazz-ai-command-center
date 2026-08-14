@@ -14,9 +14,9 @@
   let greetingInstalled = false;
 
   const GREETING_AUDIO = {
-    morning: 'https://storage.googleapis.com/adm--audio-playback--7d--public/mcp-preview/2a647350-0fc4-4b14-b2c9-798e4d61cc35.mp3',
-    afternoon: 'https://storage.googleapis.com/adm--audio-playback--7d--public/mcp-preview/00da388c-39a0-4cc3-9724-b15c16bf75b7.mp3',
-    evening: 'https://storage.googleapis.com/adm--audio-playback--7d--public/mcp-preview/52d393ef-02b5-4470-a2fa-e6ba21cd1b7d.mp3'
+    morning: 'https://storage.googleapis.com/adm--audio-playback--7d--public/mcp-preview/2574e040-6e5e-46c2-9d6e-d8a6658de00c.mp3',
+    afternoon: 'https://storage.googleapis.com/adm--audio-playback--7d--public/mcp-preview/ee346490-7db6-4430-86f4-0b0c87118a70.mp3',
+    evening: 'https://storage.googleapis.com/adm--audio-playback--7d--public/mcp-preview/746da9da-fcb6-4f4c-8a3e-50f8ca0351f0.mp3'
   };
 
   function backendUrl() { return localStorage.getItem(URL_KEY) || ''; }
