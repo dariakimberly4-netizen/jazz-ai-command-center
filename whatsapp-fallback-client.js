@@ -1,6 +1,6 @@
 /*
   Jazz AI WhatsApp fallback client
-  Mobile greeting fix: ensure the first tap speaks a time-aware greeting on Android.
+  Reliable mobile greeting: prerecorded audio selected by Manila time.
 */
 (function () {
   'use strict';
@@ -9,9 +9,15 @@
   const LAST_PING_KEY = 'jazzLastPresencePing';
   const REPORT_DAY_KEY = 'jazzDailyReportShown';
   const FIVE_MINUTES = 5 * 60 * 1000;
-
   const $ = (s) => document.querySelector(s);
   let startupReportToken = 0;
+  let greetingInstalled = false;
+
+  const GREETING_AUDIO = {
+    morning: 'https://storage.googleapis.com/adm--audio-playback--7d--public/mcp-preview/2a647350-0fc4-4b14-b2c9-798e4d61cc35.mp3',
+    afternoon: 'https://storage.googleapis.com/adm--audio-playback--7d--public/mcp-preview/00da388c-39a0-4cc3-9724-b15c16bf75b7.mp3',
+    evening: 'https://storage.googleapis.com/adm--audio-playback--7d--public/mcp-preview/52d393ef-02b5-4470-a2fa-e6ba21cd1b7d.mp3'
+  };
 
   function backendUrl() { return localStorage.getItem(URL_KEY) || ''; }
 
@@ -40,50 +46,61 @@
     return h < 12 ? 'morning' : h < 18 ? 'afternoon' : 'evening';
   }
 
-  function mobileSpeak(text) {
-    if (!('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) {
-      if (typeof window.toast === 'function') window.toast('Spoken greeting is not supported by this browser.');
-      return;
+  function playGreetingAudio() {
+    const period = greetingPeriod();
+    const audio = new Audio(GREETING_AUDIO[period]);
+    audio.preload = 'auto';
+    audio.volume = 1;
+    window.__jazzGreetingAudio = audio;
+    const p = audio.play();
+    if (p && typeof p.catch === 'function') {
+      p.catch(() => {
+        if (typeof window.toast === 'function') window.toast('Tap Jazz once more to play the greeting.');
+      });
     }
-    const synth = window.speechSynthesis;
-    synth.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    const voices = synth.getVoices();
-    const voice = voices.find(v => /fil-PH|en-PH/i.test(v.lang) && !/male|Angelo/i.test(v.name))
-      || voices.find(v => /female|Samantha|Zira|Rosa|Blessica/i.test(v.name))
-      || voices.find(v => /fil-PH|en-PH|en-US|en-GB/i.test(v.lang))
-      || voices[0];
-    if (voice) { u.voice = voice; u.lang = voice.lang || 'en-PH'; }
-    else u.lang = 'en-PH';
-    u.rate = 0.9; u.pitch = 1.04; u.volume = 1;
-    synth.resume();
-    synth.speak(u);
+    return audio;
   }
 
-  function installMobileGreeting() {
+  function deployInterface() {
+    const home = $('#home');
     const orb = $('#orb');
-    if (!orb) return;
-    orb.onclick = function () {
+    if (!home || !orb) return;
+    if (home.classList.contains('started') || home.classList.contains('deploying')) return;
+    home.classList.add('deploying');
+    const period = greetingPeriod();
+    if (typeof window.toast === 'function') window.toast(`Good ${period}, Kimmy.`);
+    const label = orb.querySelector('span');
+    if (label) label.textContent = 'DEPLOYING AGENTS';
+    document.querySelectorAll('.agent:not(.kimara)').forEach((agent, i) => {
+      setTimeout(() => agent.classList.add('deployed'), i * 170);
+    });
+    playGreetingAudio();
+    const reduce = document.body.classList.contains('reduce');
+    const count = document.querySelectorAll('.agent:not(.kimara)').length;
+    const delay = reduce ? 0 : (count * 170 + 450);
+    setTimeout(() => {
+      home.classList.remove('deploying');
+      home.classList.add('agents-ready', 'started');
+      document.body.classList.add('command-open');
+      if (label) label.textContent = 'COMMAND CENTER';
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    }, delay);
+  }
+
+  function installReliableGreeting() {
+    const orb = $('#orb');
+    if (!orb || greetingInstalled) return;
+    greetingInstalled = true;
+    orb.addEventListener('click', function (event) {
       const home = $('#home');
-      if (!home || home.classList.contains('deploying') || home.classList.contains('started')) return;
-      home.classList.add('deploying');
-      const greeting = `Good ${greetingPeriod()}, Kimmy.`;
-      if (typeof window.toast === 'function') window.toast(greeting);
-      const label = orb.querySelector('span');
-      if (label) label.textContent = 'DEPLOYING AGENTS';
-      document.querySelectorAll('.agent:not(.kimara)').forEach((agent, i) => setTimeout(() => agent.classList.add('deployed'), i * 170));
-      mobileSpeak(`${greeting} Deploying all eleven agents now. They are ready for your instructions.`);
-      const reduce = document.body.classList.contains('reduce');
-      const count = document.querySelectorAll('.agent:not(.kimara)').length;
-      const delay = reduce ? 0 : (count * 170 + 450);
-      setTimeout(() => {
-        home.classList.remove('deploying');
-        home.classList.add('agents-ready', 'started');
-        document.body.classList.add('command-open');
-        if (label) label.textContent = 'COMMAND CENTER';
-        window.scrollTo({ top: 0, behavior: 'auto' });
-      }, delay);
-    };
+      if (home && !home.classList.contains('started') && !home.classList.contains('deploying')) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        deployInterface();
+        queueStartupReportAfterGreeting();
+      }
+    }, true);
   }
 
   function numberFrom(selector) {
@@ -94,7 +111,13 @@
   function dashboardNumbers() {
     let systems = [];
     try { systems = JSON.parse(localStorage.getItem('jazzSystems') || '[]'); } catch (_) {}
-    return { leads: numberFrom('#totalLeads'), hotLeads: numberFrom('#hotLeads'), followLeads: numberFrom('#followLeads'), activeSystems: systems.filter((s) => !/archived/i.test(String(s.status || ''))).length, approvals: [...document.querySelectorAll('#approvalList .row')].length };
+    return {
+      leads: numberFrom('#totalLeads'),
+      hotLeads: numberFrom('#hotLeads'),
+      followLeads: numberFrom('#followLeads'),
+      activeSystems: systems.filter((s) => !/archived/i.test(String(s.status || ''))).length,
+      approvals: [...document.querySelectorAll('#approvalList .row')].length
+    };
   }
 
   function reportText() {
@@ -111,7 +134,11 @@
     const cfg = configFromUrl();
     if (!cfg.endpoint || !cfg.key) return Promise.resolve(false);
     const payload = { action, key: cfg.key, source: 'jazz-ai-command-center', at: new Date().toISOString(), ...extra };
-    return fetch(cfg.endpoint, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload), keepalive: true }).then(() => true).catch(() => false);
+    return fetch(cfg.endpoint, {
+      method: 'POST', mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload), keepalive: true
+    }).then(() => true).catch(() => false);
   }
 
   function heartbeat() {
@@ -130,7 +157,8 @@
     let card = $('#jazzStartupReportCard');
     if (!card) {
       card = document.createElement('div');
-      card.className = 'panel'; card.id = 'jazzStartupReportCard';
+      card.className = 'panel';
+      card.id = 'jazzStartupReportCard';
       card.innerHTML = `<div class="eyebrow" id="jazzStartupReportEyebrow"></div><h2>Your report, Kimmy</h2><p id="jazzStartupReportText"></p><div class="approve-actions"><button class="yes" id="jazzStartupReportGotIt">GOT IT</button><button id="jazzStartupReportLiveWork">LIVE WORK</button></div>`;
       home.insertBefore(card, home.querySelector('.panel') || null);
       $('#jazzStartupReportGotIt').onclick = () => card.remove();
@@ -144,18 +172,25 @@
     const text = startupReportText();
     showReportCard(text, 'AUTOMATIC JAZZ REPORT');
     post('startup-report', { report: text });
-    if (typeof window.toast === 'function') window.toast('Jazz is giving you your report.');
-    mobileSpeak(text);
+    if (typeof window.toast === 'function') window.toast('Jazz report is ready.');
   }
 
   function queueStartupReportAfterGreeting() {
     const token = ++startupReportToken;
-    const wait = () => {
-      if (token !== startupReportToken) return;
-      if ('speechSynthesis' in window && window.speechSynthesis.speaking) return setTimeout(wait, 250);
-      speakStartupReport();
-    };
-    setTimeout(wait, 700);
+    const audio = window.__jazzGreetingAudio;
+    if (audio) {
+      const finish = () => {
+        if (token !== startupReportToken) return;
+        audio.removeEventListener('ended', finish);
+        speakStartupReport();
+      };
+      audio.addEventListener('ended', finish);
+      setTimeout(() => {
+        if (token === startupReportToken && audio.ended) finish();
+      }, 700);
+      return;
+    }
+    setTimeout(() => { if (token === startupReportToken) speakStartupReport(); }, 1200);
   }
 
   function showDailyReport() {
@@ -163,32 +198,57 @@
     if (now.hour !== 9 || now.minute > 14 || document.visibilityState !== 'visible') return;
     if (localStorage.getItem(REPORT_DAY_KEY) === now.date) return;
     localStorage.setItem(REPORT_DAY_KEY, now.date);
-    const text = reportText(); post('online-report', { report: text }); mobileSpeak(text);
+    const text = reportText();
+    post('online-report', { report: text });
+    showReportCard(text, '9:00 AM DAILY REPORT');
   }
 
   function configure(url) {
     const clean = String(url || '').trim();
     if (!/^https:\/\/script\.google\.com\/macros\/s\//i.test(clean)) throw new Error('Use the HTTPS Apps Script web app URL.');
-    let parsed; try { parsed = new URL(clean); } catch { throw new Error('Invalid connection URL.'); }
+    let parsed;
+    try { parsed = new URL(clean); } catch { throw new Error('Invalid connection URL.'); }
     const key = parsed.searchParams.get('key') || '';
     if (key.length < 12) throw new Error('The private connection URL must include ?key=YOUR_PRIVATE_KEY.');
-    localStorage.setItem(URL_KEY, clean); heartbeat(); return status();
+    localStorage.setItem(URL_KEY, clean);
+    heartbeat();
+    return status();
   }
 
-  function disable() { localStorage.removeItem(URL_KEY); localStorage.removeItem(LAST_PING_KEY); return status(); }
-  function status() { const cfg = configFromUrl(); return { configured: Boolean(cfg.endpoint && cfg.key), lastPresencePing: localStorage.getItem(LAST_PING_KEY) }; }
+  function disable() {
+    localStorage.removeItem(URL_KEY);
+    localStorage.removeItem(LAST_PING_KEY);
+    return status();
+  }
 
-  window.JazzWhatsAppFallback = { configure, disable, heartbeat, status, showDailyReport, showStartupReport: speakStartupReport, queueStartupReportAfterGreeting };
+  function status() {
+    const cfg = configFromUrl();
+    return { configured: Boolean(cfg.endpoint && cfg.key), lastPresencePing: localStorage.getItem(LAST_PING_KEY) };
+  }
+
+  window.JazzWhatsAppFallback = {
+    configure, disable, heartbeat, status, showDailyReport,
+    showStartupReport: speakStartupReport,
+    queueStartupReportAfterGreeting
+  };
 
   document.addEventListener('DOMContentLoaded', () => {
-    installMobileGreeting();
-    const orb = $('#orb'); if (orb) orb.addEventListener('click', queueStartupReportAfterGreeting);
-    const reportButton = document.querySelector('[data-act="report"]'); if (reportButton) reportButton.onclick = () => speakStartupReport();
+    setTimeout(installReliableGreeting, 0);
+    const reportButton = document.querySelector('[data-act="report"]');
+    if (reportButton) reportButton.onclick = () => speakStartupReport();
   });
-
-  window.addEventListener('pageshow', () => { heartbeat(); setTimeout(showDailyReport, 700); });
+  window.addEventListener('load', installReliableGreeting);
+  window.addEventListener('pageshow', () => {
+    installReliableGreeting();
+    heartbeat();
+    setTimeout(showDailyReport, 700);
+  });
   window.addEventListener('focus', () => { heartbeat(); showDailyReport(); });
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { heartbeat(); showDailyReport(); } });
-  setInterval(() => { if (document.visibilityState === 'visible') { heartbeat(); showDailyReport(); } }, FIVE_MINUTES);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') { heartbeat(); showDailyReport(); }
+  });
+  setInterval(() => {
+    if (document.visibilityState === 'visible') { heartbeat(); showDailyReport(); }
+  }, FIVE_MINUTES);
   setTimeout(() => { heartbeat(); showDailyReport(); }, 1000);
 })();
