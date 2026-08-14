@@ -46,6 +46,12 @@
     };
   }
 
+  function greetingText() {
+    const hour = manilaParts().hour;
+    const period = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
+    return `Good ${period}, Kimmy.`;
+  }
+
   function numberFrom(selector) {
     const n = Number(String($(selector)?.textContent || '').replace(/[^0-9.-]/g, ''));
     return Number.isFinite(n) ? n : 0;
@@ -230,6 +236,15 @@
   document.addEventListener('DOMContentLoaded', () => {
     const orb = $('#orb');
     if (orb) {
+      const originalStart = orb.onclick;
+      orb.onclick = function (event) {
+        const home = $('#home');
+        const alreadyStarted = home && (home.classList.contains('started') || home.classList.contains('deploying'));
+        if (typeof originalStart === 'function') originalStart.call(this, event);
+        if (!alreadyStarted && typeof window.speak === 'function') {
+          window.speak(greetingText());
+        }
+      };
       orb.addEventListener('click', queueStartupReportAfterGreeting);
     }
 
