@@ -262,7 +262,8 @@ function jazzAgentGenerateResult_(task) {
   const prompt = [
     'You are the ' + task.agent + ' Agent inside Jazz AI, a private AI Chief of Staff.',
     'Complete the user task below and return ONLY the finished result that the user can review.',
-    'Be truthful. Do not claim you searched the web, Gmail, Drive, Calendar, CRM, or any external service unless actual data is included in the prompt.',
+    'Be truthful. Do not claim you searched Gmail, Drive, Calendar, CRM, or any external service unless actual data is included in the prompt.',
+    task.agent === 'Lead & CRM' ? 'For lead research, use Google Search grounding. Return only publicly verifiable organizations and contacts. Include the source URL for every lead. Never guess an email address, phone number, person, title, or organization.' : 'Do not claim web research unless Google Search grounding is enabled for this task.',
     'Do not send, publish, delete, purchase, or make consequential changes. Prepare the result for approval.',
     'Use clear, concise, Parkinson-friendly formatting with short sections.',
     '',
@@ -275,8 +276,10 @@ function jazzAgentGenerateResult_(task) {
 
   const body = {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.35, maxOutputTokens: 4096 }
+    generationConfig: { temperature: 0.25, maxOutputTokens: 4096 }
   };
+  const isLeadResearch = task.agent === 'Lead & CRM' && /\b(find|search|research|lead|prospect|organization|hospital|clinic|rotary|lions|contact)\b/i.test(task.command);
+  if (isLeadResearch) body.tools = [{ google_search: {} }];
   const response = UrlFetchApp.fetch(
     'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent',
     {
@@ -294,8 +297,23 @@ function jazzAgentGenerateResult_(task) {
   const data = JSON.parse(text || '{}');
   const parts = data && data.candidates && data.candidates[0] && data.candidates[0].content &&
     Array.isArray(data.candidates[0].content.parts) ? data.candidates[0].content.parts : [];
-  const result = parts.map(function(part) { return String(part.text || ''); }).join('').trim();
+  let result = parts.map(function(part) { return String(part.text || ''); }).join('').trim();
   if (!result) throw new Error('AI agent returned no result.');
+  if (isLeadResearch) {
+    const grounding = data && data.candidates && data.candidates[0] && data.candidates[0].groundingMetadata;
+    const chunks = grounding && Array.isArray(grounding.groundingChunks) ? grounding.groundingChunks : [];
+    const seen = {};
+    const sources = chunks.map(function(chunk) {
+      const web = chunk && chunk.web ? chunk.web : {};
+      const uri = String(web.uri || '').trim();
+      const title = String(web.title || 'Source').trim();
+      if (!uri || seen[uri]) return '';
+      seen[uri] = true;
+      return '• ' + title + ': ' + uri;
+    }).filter(Boolean);
+    if (sources.length) result += '\n\nVERIFIED WEB SOURCES\n' + sources.join('\n');
+    result += '\n\nNo email has been sent. Review and approve before outreach.';
+  }
   return result;
 }
 
