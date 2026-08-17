@@ -103,6 +103,26 @@
     }, true);
   }
 
+  function installBookBrainButton() {
+    const actions = document.querySelector('.actions.after-jazz') || document.querySelector('.actions');
+    if (!actions || document.getElementById('bookBrainDirectBtn')) return;
+    const btn = document.createElement('button');
+    btn.id = 'bookBrainDirectBtn';
+    btn.className = 'action';
+    btn.type = 'button';
+    btn.innerHTML = '<i>🧠</i>BOOK BRAIN';
+    btn.onclick = function () {
+      if (window.JazzBookBrain && typeof window.JazzBookBrain.open === 'function') {
+        window.JazzBookBrain.open();
+      } else {
+        window.location.href = 'book-brain.html?v=24';
+      }
+    };
+    const liveWork = actions.querySelector('[data-nav="work"]');
+    if (liveWork && liveWork.nextSibling) actions.insertBefore(btn, liveWork.nextSibling);
+    else actions.appendChild(btn);
+  }
+
   function numberFrom(selector) {
     const n = Number(String($(selector)?.textContent || '').replace(/[^0-9.-]/g, ''));
     return Number.isFinite(n) ? n : 0;
@@ -234,21 +254,24 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     setTimeout(installReliableGreeting, 0);
+    setTimeout(installBookBrainButton, 0);
+    setTimeout(installBookBrainButton, 600);
     const reportButton = document.querySelector('[data-act="report"]');
     if (reportButton) reportButton.onclick = () => speakStartupReport();
   });
-  window.addEventListener('load', installReliableGreeting);
+  window.addEventListener('load', () => { installReliableGreeting(); installBookBrainButton(); });
   window.addEventListener('pageshow', () => {
     installReliableGreeting();
+    installBookBrainButton();
     heartbeat();
     setTimeout(showDailyReport, 700);
   });
-  window.addEventListener('focus', () => { heartbeat(); showDailyReport(); });
+  window.addEventListener('focus', () => { installBookBrainButton(); heartbeat(); showDailyReport(); });
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') { heartbeat(); showDailyReport(); }
+    if (document.visibilityState === 'visible') { installBookBrainButton(); heartbeat(); showDailyReport(); }
   });
   setInterval(() => {
-    if (document.visibilityState === 'visible') { heartbeat(); showDailyReport(); }
+    if (document.visibilityState === 'visible') { installBookBrainButton(); heartbeat(); showDailyReport(); }
   }, FIVE_MINUTES);
-  setTimeout(() => { heartbeat(); showDailyReport(); }, 1000);
+  setTimeout(() => { installBookBrainButton(); heartbeat(); showDailyReport(); }, 1000);
 })();
