@@ -23,7 +23,6 @@ jobs:
           python - <<'PY'
           from pathlib import Path
 
-          # 1) Make the original DEPLOY AGENTS click path call the real deploy engine.
           p = Path('index.html')
           s = p.read_text(encoding='utf-8')
           old_handler = "else if(a==='deploy')deploy();"
@@ -31,31 +30,31 @@ jobs:
           if old_handler in s:
               s = s.replace(old_handler, new_handler)
 
-          # 2) Force Chrome to load the corrected files.
           replacements = {
-              'whatsapp-fallback-client.js?v=27': 'whatsapp-fallback-client.js?v=28',
-              'jazz-agent-engine.js?v=27': 'jazz-agent-engine.js?v=28',
-              'jazz-apps-script-agents.js?v=27': 'jazz-apps-script-agents.js?v=28',
-              'whatsapp-fallback.js?v=27': 'whatsapp-fallback.js?v=28',
-              'live-work-enhancement.js?v=27': 'live-work-enhancement.js?v=28',
+              'whatsapp-fallback-client.js?v=28': 'whatsapp-fallback-client.js?v=29',
+              'jazz-agent-engine.js?v=28': 'jazz-agent-engine.js?v=29',
+              'jazz-apps-script-agents.js?v=28': 'jazz-apps-script-agents.js?v=29',
+              'whatsapp-fallback.js?v=28': 'whatsapp-fallback.js?v=29',
+              'live-work-enhancement.js?v=28': 'live-work-enhancement.js?v=29',
           }
           for old, new in replacements.items():
               s = s.replace(old, new)
           p.write_text(s, encoding='utf-8')
 
-          # 3) While Deploy All is active, individual task updates must not overwrite
-          #    the 11-agent Live Work board with one task card.
           bridge = Path('jazz-apps-script-agents.js')
           b = bridge.read_text(encoding='utf-8')
-          old_render = "try { window.JazzAgentEngine?.render(task); } catch (_) {}"
-          new_render = "try { if (!(window.JazzDeployAll?.state?.().active)) window.JazzAgentEngine?.render(task); } catch (_) {}"
-          b = b.replace(old_render, new_render)
+          replacements_bridge = {
+              "try { window.JazzAgentEngine?.render(task); } catch (_) {}": "try { if (!(window.JazzDeployAll?.state?.().active)) window.JazzAgentEngine?.render(task); } catch (_) {}",
+              "try { window.JazzAgentEngine?.render(rows[i]); } catch (_) {}": "try { if (!(window.JazzDeployAll?.state?.().active)) window.JazzAgentEngine?.render(rows[i]); } catch (_) {}",
+          }
+          for old, new in replacements_bridge.items():
+              b = b.replace(old, new)
           bridge.write_text(b, encoding='utf-8')
           PY
 
           grep -n "a==='deploy'" index.html | tail -n 2
           grep -nE 'jazz-agent-engine|jazz-apps-script-agents|whatsapp-fallback.js|live-work-enhancement.js' index.html | tail -n 10
-          grep -n "JazzDeployAll.*state" jazz-apps-script-agents.js | head -n 5
+          grep -n "JazzDeployAll.*state" jazz-apps-script-agents.js | head -n 10
 
       - name: Commit deploy fix
         shell: bash
@@ -67,5 +66,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add index.html jazz-apps-script-agents.js
-          git commit -m 'Fix real Deploy Agents board v28'
+          git commit -m 'Finish real Deploy Agents board v29'
           git push
