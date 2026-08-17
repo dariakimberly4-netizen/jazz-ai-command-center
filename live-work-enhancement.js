@@ -3,38 +3,64 @@
   'use strict';
 
   var original=document.createElement('script');
-  original.src='live-work-enhancement-original.js?v=22';
+  original.src='live-work-enhancement-original.js?v=31';
   document.head.appendChild(original);
 
   var brain=null;
   var brainReady=false;
 
   function byId(id){return document.getElementById(id)}
-  function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]})}
+  function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
   function note(t){try{if(typeof window.toast==='function')window.toast(t)}catch(_){}}
   function say(t){try{if(typeof window.speak==='function')window.speak(t)}catch(_){}}
 
   function loadBrain(){
-    return fetch('book-brain.json?v=22',{cache:'no-store'})
+    return fetch('book-brain.json?v=31-grounding',{cache:'no-store'})
       .then(function(r){if(!r.ok)throw new Error('Book Brain unavailable');return r.json()})
       .then(function(d){brain=d;brainReady=true;renderStatus();return d})
       .catch(function(){brainReady=false;renderStatus()});
   }
 
+  var STOP={
+    what:1,when:1,where:1,which:1,who:1,whom:1,whose:1,why:1,how:1,does:1,did:1,done:1,doing:1,
+    are:1,was:1,were:1,been:1,being:1,the:1,and:1,but:1,then:1,than:1,for:1,from:1,with:1,without:1,
+    about:1,into:1,through:1,our:1,you:1,your:1,say:1,says:1,said:1,tell:1,tells:1,according:1,
+    book:1,beyond:1,tremor:1,kimberly:1,daria:1,please:1,can:1,could:1,would:1,should:1,there:1,this:1,that:1,these:1,those:1
+  };
+  function norm(s){return String(s||'').toLowerCase().replace(/[’']/g,"'").replace(/[^a-z0-9₱]+/g,' ').trim()}
+  function queryTerms(q){return norm(q).split(/\s+/).filter(function(t){return t.length>2&&!STOP[t]})}
+  function entryText(e){return norm([e.chapter,e.summary,(e.themes||[]).join(' '),e.exact_quote||''].join(' '))}
+  function chapterNumber(q){var m=norm(q).match(/\bchapter\s+(\d+)\b/);return m?m[1]:null}
   function score(entry,q){
-    var terms=String(q||'').toLowerCase().split(/[^a-z0-9₱]+/).filter(function(x){return x.length>2});
-    var themes=(entry.themes||[]).join(' ').toLowerCase();
-    var hay=[entry.chapter,entry.summary,themes,entry.exact_quote||''].join(' ').toLowerCase();
-    var s=0;
-    terms.forEach(function(t){if(hay.indexOf(t)>=0)s+=1;if(themes.indexOf(t)>=0)s+=2;if(String(entry.chapter||'').toLowerCase().indexOf(t)>=0)s+=2});
-    return s;
+    var text=entryText(entry),themes=norm((entry.themes||[]).join(' ')),chapter=norm(entry.chapter||'');
+    var terms=queryTerms(q),ch=chapterNumber(q),s=0,matched=0;
+    if(ch&&new RegExp('^chapter\\s+'+ch+'\\b').test(chapter)){s+=12;matched+=2}
+    terms.forEach(function(t){
+      if(text.indexOf(t)>=0){matched++;s+=1}
+      if(themes.indexOf(t)>=0)s+=3;
+      if(chapter.indexOf(t)>=0)s+=2;
+    });
+    return {s:s,matched:matched};
   }
 
   function searchBook(q){
     if(!brain||!Array.isArray(brain.entries))return [];
-    var ranked=brain.entries.map(function(e){return {e:e,s:score(e,q)}}).sort(function(a,b){return b.s-a.s});
-    var hits=ranked.filter(function(x){return x.s>0}).slice(0,4).map(function(x){return x.e});
-    return hits.length?hits:brain.entries.slice(0,3);
+    var ch=chapterNumber(q),meaningful=queryTerms(q);
+    if(!ch&&!meaningful.length)return [];
+    var ranked=brain.entries.map(function(e){var x=score(e,q);return {e:e,s:x.s,matched:x.matched}}).sort(function(a,b){return b.s-a.s});
+    if(ch)return ranked.filter(function(x){return x.s>=10}).slice(0,5).map(function(x){return x.e});
+    var minMatched=meaningful.length>=3?2:1;
+    return ranked.filter(function(x){return x.matched>=minMatched&&x.s>=1}).slice(0,5).map(function(x){return x.e});
+  }
+
+  function showNotFound(area){
+    var msg="I couldn’t find that information in Beyond the Tremor.";
+    area.innerHTML='<div class="row" style="display:block;border-color:rgba(255,156,165,.45)">'+
+      '<div class="eyebrow" style="color:#ffb7bd">BOOK BRAIN • NOT FOUND</div>'+
+      '<strong>No supported source found</strong>'+
+      '<p style="margin:8px 0;color:#eee;line-height:1.5">'+esc(msg)+'</p>'+
+      '<small>Source lock: ON • No unrelated chapter summaries were substituted.</small></div>';
+    say(msg);
   }
 
   function answerBook(q){
@@ -42,6 +68,7 @@
     if(!area)return;
     if(!brainReady){area.innerHTML='<div class="empty">Book Brain is still loading. Please try again.</div>';return}
     var hits=searchBook(q);
+    if(!hits.length){showNotFound(area);return}
     area.innerHTML=hits.map(function(e){return '<div class="row" style="display:block">'+
       '<div class="eyebrow">BOOK SOURCE • '+esc(e.pages?('PAGE '+e.pages):'SOURCE')+'</div>'+
       '<strong>'+esc(e.chapter)+'</strong>'+
@@ -63,18 +90,32 @@
   }
   function closeBrain(){var o=byId('bookBrainOverlay');if(o)o.classList.remove('open')}
 
+  function isBookBrainButton(btn){
+    if(!btn)return false;
+    if(btn.id==='bookBrainBtn')return true;
+    var text=String(btn.textContent||'').replace(/\s+/g,' ').trim().toUpperCase();
+    return text==='BOOK BRAIN'||text.indexOf('BOOK BRAIN')>=0;
+  }
+
   function ensureButton(){
     var actions=document.querySelector('.actions');
     if(!actions)return false;
-    var btn=byId('bookBrainBtn');
+
+    var matches=Array.prototype.filter.call(actions.querySelectorAll('button'),isBookBrainButton);
+    var btn=matches.length?matches[0]:null;
+    for(var i=1;i<matches.length;i++)matches[i].remove();
+
     if(!btn){
       btn=document.createElement('button');
-      btn.id='bookBrainBtn';
       btn.className='action';
       btn.innerHTML='<i>🧠</i>BOOK BRAIN';
       var liveBtn=actions.querySelector('[data-nav="work"]');
       if(liveBtn&&liveBtn.nextSibling)actions.insertBefore(btn,liveBtn.nextSibling);else actions.appendChild(btn);
     }
+
+    btn.id='bookBrainBtn';
+    btn.className='action';
+    btn.innerHTML='<i>🧠</i>BOOK BRAIN';
     btn.onclick=openBrain;
     btn.style.display='block';
     btn.removeAttribute('hidden');
@@ -82,13 +123,15 @@
   }
 
   function ensureOverlay(){
+    var overlays=document.querySelectorAll('#bookBrainOverlay');
+    if(overlays.length>1){for(var i=1;i<overlays.length;i++)overlays[i].remove()}
     if(byId('bookBrainOverlay'))return;
     var overlay=document.createElement('div');
     overlay.id='bookBrainOverlay';
     overlay.className='talkbox';
     overlay.innerHTML='<div class="sheet" style="max-height:90vh;overflow:auto">'+
       '<div class="eyebrow">BEYOND THE TREMOR • KNOWLEDGE BRAIN</div><h2>🧠 Ask My Book</h2>'+
-      '<p class="honest">Jazz searches the source-grounded Book Brain first. Direct quotes are never invented.</p>'+
+      '<p class="honest">Jazz searches the source-grounded Book Brain first. Direct quotes are never invented. Unsupported claims return NOT FOUND.</p>'+
       '<div class="badge" id="bookBrainStatus">LOADING BOOK…</div>'+
       '<div class="input" style="grid-template-columns:minmax(0,1fr) 68px;margin-top:14px">'+
       '<input id="bookBrainQuery" placeholder="Ask about faith, DBS, family, resilience…" aria-label="Ask Beyond the Tremor">'+
