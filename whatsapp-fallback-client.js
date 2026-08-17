@@ -1,277 +1,62 @@
-/*
-  Jazz AI WhatsApp fallback client
-  Reliable mobile greeting: prerecorded audio selected by Manila time.
-*/
-(function () {
-  'use strict';
-
-  const URL_KEY = 'jazzWhatsAppFallbackUrl';
-  const LAST_PING_KEY = 'jazzLastPresencePing';
-  const REPORT_DAY_KEY = 'jazzDailyReportShown';
-  const FIVE_MINUTES = 5 * 60 * 1000;
-  const $ = (s) => document.querySelector(s);
-  let startupReportToken = 0;
-  let greetingInstalled = false;
-
-  const GREETING_AUDIO = {
-    morning: 'https://storage.googleapis.com/adm--audio-playback--7d--public/mcp-preview/2574e040-6e5e-46c2-9d6e-d8a6658de00c.mp3',
-    afternoon: 'https://storage.googleapis.com/adm--audio-playback--7d--public/mcp-preview/ee346490-7db6-4430-86f4-0b0c87118a70.mp3',
-    evening: 'https://storage.googleapis.com/adm--audio-playback--7d--public/mcp-preview/746da9da-fcb6-4f4c-8a3e-50f8ca0351f0.mp3'
-  };
-
-  function backendUrl() { return localStorage.getItem(URL_KEY) || ''; }
-
-  function configFromUrl() {
-    const value = backendUrl();
-    if (!value) return { endpoint: '', key: '' };
-    try {
-      const u = new URL(value);
-      const key = u.searchParams.get('key') || '';
-      u.searchParams.delete('key');
-      return { endpoint: u.toString(), key };
-    } catch { return { endpoint: '', key: '' }; }
-  }
-
-  function manilaParts(date = new Date()) {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', hour12: false
-    }).formatToParts(date);
-    const get = (type) => parts.find((p) => p.type === type)?.value || '';
-    return { date: `${get('year')}-${get('month')}-${get('day')}`, hour: Number(get('hour')), minute: Number(get('minute')) };
-  }
-
-  function greetingPeriod() {
-    const h = manilaParts().hour;
-    return h < 12 ? 'morning' : h < 18 ? 'afternoon' : 'evening';
-  }
-
-  function playGreetingAudio() {
-    const period = greetingPeriod();
-    const audio = new Audio(GREETING_AUDIO[period]);
-    audio.preload = 'auto';
-    audio.volume = 1;
-    window.__jazzGreetingAudio = audio;
-    const p = audio.play();
-    if (p && typeof p.catch === 'function') {
-      p.catch(() => {
-        if (typeof window.toast === 'function') window.toast('Tap Jazz once more to play the greeting.');
-      });
-    }
-    return audio;
-  }
-
-  function deployInterface() {
-    const home = $('#home');
-    const orb = $('#orb');
-    if (!home || !orb) return;
-    if (home.classList.contains('started') || home.classList.contains('deploying')) return;
-    home.classList.add('deploying');
-    const period = greetingPeriod();
-    if (typeof window.toast === 'function') window.toast(`Good ${period}, Kimmy.`);
-    const label = orb.querySelector('span');
-    if (label) label.textContent = 'DEPLOYING AGENTS';
-    document.querySelectorAll('.agent:not(.kimara)').forEach((agent, i) => {
-      setTimeout(() => agent.classList.add('deployed'), i * 170);
-    });
-    playGreetingAudio();
-    const reduce = document.body.classList.contains('reduce');
-    const count = document.querySelectorAll('.agent:not(.kimara)').length;
-    const delay = reduce ? 0 : (count * 170 + 450);
-    setTimeout(() => {
-      home.classList.remove('deploying');
-      home.classList.add('agents-ready', 'started');
-      document.body.classList.add('command-open');
-      if (label) label.textContent = 'COMMAND CENTER';
-      window.scrollTo({ top: 0, behavior: 'auto' });
-    }, delay);
-  }
-
-  function installReliableGreeting() {
-    const orb = $('#orb');
-    if (!orb || greetingInstalled) return;
-    greetingInstalled = true;
-    orb.addEventListener('click', function (event) {
-      const home = $('#home');
-      if (home && !home.classList.contains('started') && !home.classList.contains('deploying')) {
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-        deployInterface();
-        queueStartupReportAfterGreeting();
-      }
-    }, true);
-  }
-
-  function installBookBrainButton() {
-    const actions = document.querySelector('.actions.after-jazz') || document.querySelector('.actions');
-    if (!actions || document.getElementById('bookBrainDirectBtn')) return;
-    const btn = document.createElement('button');
-    btn.id = 'bookBrainDirectBtn';
-    btn.className = 'action';
-    btn.type = 'button';
-    btn.innerHTML = '<i>🧠</i>BOOK BRAIN';
-    btn.onclick = function () {
-      if (window.JazzBookBrain && typeof window.JazzBookBrain.open === 'function') {
-        window.JazzBookBrain.open();
-      } else {
-        window.location.href = 'book-brain.html?v=24';
-      }
-    };
-    const liveWork = actions.querySelector('[data-nav="work"]');
-    if (liveWork && liveWork.nextSibling) actions.insertBefore(btn, liveWork.nextSibling);
-    else actions.appendChild(btn);
-  }
-
-  function numberFrom(selector) {
-    const n = Number(String($(selector)?.textContent || '').replace(/[^0-9.-]/g, ''));
-    return Number.isFinite(n) ? n : 0;
-  }
-
-  function dashboardNumbers() {
-    let systems = [];
-    try { systems = JSON.parse(localStorage.getItem('jazzSystems') || '[]'); } catch (_) {}
-    return {
-      leads: numberFrom('#totalLeads'),
-      hotLeads: numberFrom('#hotLeads'),
-      followLeads: numberFrom('#followLeads'),
-      activeSystems: systems.filter((s) => !/archived/i.test(String(s.status || ''))).length,
-      approvals: [...document.querySelectorAll('#approvalList .row')].length
-    };
-  }
-
-  function reportText() {
-    const d = dashboardNumbers();
-    return `Good morning, Kimmy. Here is your Jazz 9 AM report. You have ${d.leads} leads, ${d.hotLeads} hot leads, ${d.followLeads} needing follow-up, ${d.activeSystems} active systems, and ${d.approvals} approvals waiting. Review urgent follow-ups and approvals first.`;
-  }
-
-  function startupReportText() {
-    const d = dashboardNumbers();
-    return `Here is your report, Kimmy. You currently have ${d.leads} leads, ${d.hotLeads} hot leads, ${d.followLeads} needing follow-up, ${d.activeSystems} active systems, and ${d.approvals} approvals waiting. Your first priority is to review urgent follow-ups and anything waiting for your approval. I am ready for your next instruction.`;
-  }
-
-  function post(action, extra = {}) {
-    const cfg = configFromUrl();
-    if (!cfg.endpoint || !cfg.key) return Promise.resolve(false);
-    const payload = { action, key: cfg.key, source: 'jazz-ai-command-center', at: new Date().toISOString(), ...extra };
-    return fetch(cfg.endpoint, {
-      method: 'POST', mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload), keepalive: true
-    }).then(() => true).catch(() => false);
-  }
-
-  function heartbeat() {
-    if (document.visibilityState !== 'visible') return false;
-    const cfg = configFromUrl();
-    if (!cfg.endpoint || !cfg.key) return false;
-    const at = new Date().toISOString();
-    post('heartbeat', { report: reportText() });
-    localStorage.setItem(LAST_PING_KEY, at);
-    return true;
-  }
-
-  function showReportCard(text, eyebrow = 'JAZZ REPORT') {
-    const home = $('#home');
-    if (!home) return;
-    let card = $('#jazzStartupReportCard');
-    if (!card) {
-      card = document.createElement('div');
-      card.className = 'panel';
-      card.id = 'jazzStartupReportCard';
-      card.innerHTML = `<div class="eyebrow" id="jazzStartupReportEyebrow"></div><h2>Your report, Kimmy</h2><p id="jazzStartupReportText"></p><div class="approve-actions"><button class="yes" id="jazzStartupReportGotIt">GOT IT</button><button id="jazzStartupReportLiveWork">LIVE WORK</button></div>`;
-      home.insertBefore(card, home.querySelector('.panel') || null);
-      $('#jazzStartupReportGotIt').onclick = () => card.remove();
-      $('#jazzStartupReportLiveWork').onclick = () => { if (typeof window.nav === 'function') window.nav('work'); };
-    }
-    $('#jazzStartupReportEyebrow').textContent = eyebrow;
-    $('#jazzStartupReportText').textContent = text;
-  }
-
-  function speakStartupReport() {
-    const text = startupReportText();
-    showReportCard(text, 'AUTOMATIC JAZZ REPORT');
-    post('startup-report', { report: text });
-    if (typeof window.toast === 'function') window.toast('Jazz report is ready.');
-  }
-
-  function queueStartupReportAfterGreeting() {
-    const token = ++startupReportToken;
-    const audio = window.__jazzGreetingAudio;
-    if (audio) {
-      const finish = () => {
-        if (token !== startupReportToken) return;
-        audio.removeEventListener('ended', finish);
-        speakStartupReport();
-      };
-      audio.addEventListener('ended', finish);
-      setTimeout(() => {
-        if (token === startupReportToken && audio.ended) finish();
-      }, 700);
-      return;
-    }
-    setTimeout(() => { if (token === startupReportToken) speakStartupReport(); }, 1200);
-  }
-
-  function showDailyReport() {
-    const now = manilaParts();
-    if (now.hour !== 9 || now.minute > 14 || document.visibilityState !== 'visible') return;
-    if (localStorage.getItem(REPORT_DAY_KEY) === now.date) return;
-    localStorage.setItem(REPORT_DAY_KEY, now.date);
-    const text = reportText();
-    post('online-report', { report: text });
-    showReportCard(text, '9:00 AM DAILY REPORT');
-  }
-
-  function configure(url) {
-    const clean = String(url || '').trim();
-    if (!/^https:\/\/script\.google\.com\/macros\/s\//i.test(clean)) throw new Error('Use the HTTPS Apps Script web app URL.');
-    let parsed;
-    try { parsed = new URL(clean); } catch { throw new Error('Invalid connection URL.'); }
-    const key = parsed.searchParams.get('key') || '';
-    if (key.length < 12) throw new Error('The private connection URL must include ?key=YOUR_PRIVATE_KEY.');
-    localStorage.setItem(URL_KEY, clean);
-    heartbeat();
-    return status();
-  }
-
-  function disable() {
-    localStorage.removeItem(URL_KEY);
-    localStorage.removeItem(LAST_PING_KEY);
-    return status();
-  }
-
-  function status() {
-    const cfg = configFromUrl();
-    return { configured: Boolean(cfg.endpoint && cfg.key), lastPresencePing: localStorage.getItem(LAST_PING_KEY) };
-  }
-
-  window.JazzWhatsAppFallback = {
-    configure, disable, heartbeat, status, showDailyReport,
-    showStartupReport: speakStartupReport,
-    queueStartupReportAfterGreeting
-  };
-
-  document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(installReliableGreeting, 0);
-    setTimeout(installBookBrainButton, 0);
-    setTimeout(installBookBrainButton, 600);
-    const reportButton = document.querySelector('[data-act="report"]');
-    if (reportButton) reportButton.onclick = () => speakStartupReport();
-  });
-  window.addEventListener('load', () => { installReliableGreeting(); installBookBrainButton(); });
-  window.addEventListener('pageshow', () => {
-    installReliableGreeting();
-    installBookBrainButton();
-    heartbeat();
-    setTimeout(showDailyReport, 700);
-  });
-  window.addEventListener('focus', () => { installBookBrainButton(); heartbeat(); showDailyReport(); });
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') { installBookBrainButton(); heartbeat(); showDailyReport(); }
-  });
-  setInterval(() => {
-    if (document.visibilityState === 'visible') { installBookBrainButton(); heartbeat(); showDailyReport(); }
-  }, FIVE_MINUTES);
-  setTimeout(() => { installBookBrainButton(); heartbeat(); showDailyReport(); }, 1000);
+/* Jazz AI helper: mobile greeting, reports, Book Brain, fallback, and honest 11-agent work. */
+(function(){
+'use strict';
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const URL='jazzWhatsAppFallbackUrl',PING='jazzLastPresencePing',DAY='jazzDailyReportShown',RUN='jazzAgentWorkRunV2';
+const A=['Partnership','Social Media','Reader Care','Finance & Orders','Aiva Presentation','Grant & Sponsorship','Media','Website','Knowledge','Events','Lead & CRM'];
+let installed=false,greeted=false,timers=[];
+const audio={
+ morning:'https://storage.googleapis.com/adm--audio-playback--7d--public/mcp-preview/2574e040-6e5e-46c2-9d6e-d8a6658de00c.mp3',
+ afternoon:'https://storage.googleapis.com/adm--audio-playback--7d--public/mcp-preview/ee346490-7db6-4430-86f4-0b0c87118a70.mp3',
+ evening:'https://storage.googleapis.com/adm--audio-playback--7d--public/mcp-preview/746da9da-fcb6-4f4c-8a3e-50f8ca0351f0.mp3'
+};
+function toast(x){if(typeof window.toast==='function')window.toast(x)}
+function nav(id){if(typeof window.nav==='function')return window.nav(id);$$('.view').forEach(v=>v.classList.toggle('active',v.id===id));}
+function manila(){const p=new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(new Date()),g=t=>p.find(x=>x.type===t)?.value||'';return{date:`${g('year')}-${g('month')}-${g('day')}`,hour:+g('hour'),minute:+g('minute')}}
+function period(){const h=manila().hour;return h<12?'morning':h<18?'afternoon':'evening'}
+function cfg(){const v=localStorage.getItem(URL)||'';if(!v)return{endpoint:'',key:''};try{const u=new URL(v),key=u.searchParams.get('key')||'';u.searchParams.delete('key');return{endpoint:u.toString(),key}}catch(_){return{endpoint:'',key:''}}}
+function status(){const c=cfg();return{configured:!!(c.endpoint&&c.key),lastPresencePing:localStorage.getItem(PING)}}
+function configure(v){v=String(v||'').trim();if(!/^https:\/\/script\.google\.com\/macros\/s\//i.test(v))throw Error('Use the HTTPS Apps Script web app URL.');const u=new URL(v),key=u.searchParams.get('key')||'';if(key.length<12)throw Error('The private connection URL must include ?key=YOUR_PRIVATE_KEY.');localStorage.setItem(URL,v);heartbeat();return status()}
+function disable(){localStorage.removeItem(URL);localStorage.removeItem(PING);return status()}
+function post(action,extra={}){const c=cfg();if(!c.endpoint||!c.key)return Promise.resolve(false);return fetch(c.endpoint,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action,key:c.key,source:'jazz-ai-command-center',at:new Date().toISOString(),...extra}),keepalive:true}).then(()=>true).catch(()=>false)}
+function num(s){const n=Number(String($(s)?.textContent||'').replace(/[^0-9.-]/g,''));return Number.isFinite(n)?n:0}
+function counts(){let systems=[];try{systems=JSON.parse(localStorage.getItem('jazzSystems')||'[]')}catch(_){}return{leads:num('#totalLeads'),hot:num('#hotLeads'),follow:num('#followLeads'),systems:systems.filter(s=>!/archived/i.test(String(s.status||''))).length,approvals:$$('#approvalList .row').filter(r=>!r.classList.contains('jazz-agent-approval')).length}}
+function report(){const d=counts();return`Here is your Jazz report, Kimmy. You have ${d.leads} leads, ${d.hot} hot leads, ${d.follow} needing follow-up, ${d.systems} active systems, and ${d.approvals} other approvals waiting.`}
+function heartbeat(){if(document.visibilityState!=='visible')return false;const c=cfg();if(!c.endpoint||!c.key)return false;post('heartbeat',{report:report()});localStorage.setItem(PING,new Date().toISOString());return true}
+function showReport(label='JAZZ REPORT'){const home=$('#home');if(!home)return;let c=$('#jazzStartupReportCard');if(!c){c=document.createElement('div');c.className='panel';c.id='jazzStartupReportCard';c.innerHTML='<div class="eyebrow" id="jazzReportLabel"></div><h2>Your report, Kimmy</h2><p id="jazzReportText"></p><div class="approve-actions"><button class="yes" id="jazzReportOk">GOT IT</button><button id="jazzReportWork">LIVE WORK</button></div>';home.insertBefore(c,home.querySelector('.panel')||null);$('#jazzReportOk').onclick=()=>c.remove();$('#jazzReportWork').onclick=()=>nav('work')}$('#jazzReportLabel').textContent=label;$('#jazzReportText').textContent=report();post('report',{report:report()});toast('Jazz report is ready.')}
+function showDailyReport(){const n=manila();if(n.hour!==9||n.minute>14||document.visibilityState!=='visible'||localStorage.getItem(DAY)===n.date)return;localStorage.setItem(DAY,n.date);showReport('9:00 AM DAILY REPORT')}
+function reliableGreeting(){const o=$('#orb'),home=$('#home');if(!o||!home||greeted)return;greeted=true;o.addEventListener('click',e=>{if(home.classList.contains('started')||home.classList.contains('deploying'))return;e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();home.classList.add('deploying');const label=o.querySelector('span');if(label)label.textContent='DEPLOYING AGENTS';$$('.agent:not(.kimara)').forEach((a,i)=>setTimeout(()=>a.classList.add('deployed'),i*170));const au=new Audio(audio[period()]);window.__jazzGreetingAudio=au;au.play().catch(()=>{});const finish=()=>{home.classList.remove('deploying');home.classList.add('agents-ready','started');document.body.classList.add('command-open');if(label)label.textContent='COMMAND CENTER';window.scrollTo({top:0,behavior:'auto'});showReport('AUTOMATIC JAZZ REPORT')};au.addEventListener('ended',finish,{once:true});setTimeout(()=>{if(!home.classList.contains('started'))finish()},4200)},true)}
+function bookBrain(){const box=document.querySelector('.actions.after-jazz')||document.querySelector('.actions');if(!box||$('#bookBrainDirectBtn'))return;const b=document.createElement('button');b.id='bookBrainDirectBtn';b.className='action';b.type='button';b.innerHTML='<i>🧠</i>BOOK BRAIN';b.onclick=()=>{if(window.JazzBookBrain?.open)window.JazzBookBrain.open();else location.href='book-brain.html?v=24'};box.appendChild(b)}
+function load(){try{const r=JSON.parse(localStorage.getItem(RUN)||'null');return r&&Array.isArray(r.tasks)?r:null}catch(_){return null}}
+function save(r){localStorage.setItem(RUN,JSON.stringify(r))}
+function task(r,n){return r.tasks.find(t=>t.name===n)}
+function label(s){return({working:'WORKING',completed:'RESULT',needs_approval:'NEEDS APPROVAL',needs_connection:'CONNECTION NEEDED',needs_input:'INPUT NEEDED',approved:'APPROVED',rejected:'NOT APPROVED',error:'CHECK NEEDED'})[s]||'READY'}
+function color(s){return s==='completed'||s==='approved'?'#69e7b4':s==='error'||s==='rejected'?'#ff7683':s==='needs_connection'||s==='needs_input'?'#9c6cff':'#d9bd7c'}
+function agentStatus(n,text){$$('#agentList .row').forEach(r=>{const a=r.querySelector('strong'),b=r.querySelector('small');if(a&&b&&a.textContent.trim()===n)b.textContent=text})}
+function approvals(r){const list=$('#approvalList');if(!list||!r)return;$$('.jazz-agent-approval').forEach(x=>x.remove());const p=r.tasks.filter(t=>t.status==='needs_approval');if(p.length)list.querySelector('.empty')?.remove();p.forEach(t=>{const row=document.createElement('div');row.className='row jazz-agent-approval';row.innerHTML='<span class="dot"></span><div style="min-width:0"><strong></strong><small></small></div><div style="margin-left:auto;display:grid;gap:6px"><button class="yes">APPROVE</button><button>NO</button></div>';row.querySelector('strong').textContent=t.name;row.querySelector('small').textContent=`${t.approval}. Approval records your decision only; Jazz will not send, publish, or change an external record automatically.`;const b=row.querySelectorAll('button');b[0].onclick=()=>decide(t.name,true);b[1].onclick=()=>decide(t.name,false);list.appendChild(row)});if(!list.querySelector('.row'))list.innerHTML='<div class="empty">No approvals waiting.</div>'}
+function render(r=load()){if(!r)return;const list=$('#workList');if(!list)return;list.querySelector('.empty')?.remove();$$('.jazz-agent-task').forEach(x=>x.remove());[...r.tasks].reverse().forEach(t=>{const row=document.createElement('div');row.className='row jazz-agent-task';const dot=document.createElement('span');dot.className='dot';dot.style.background=color(t.status);dot.style.boxShadow=`0 0 12px ${color(t.status)}`;const body=document.createElement('div');body.style.minWidth='0';const strong=document.createElement('strong');strong.textContent=`${t.name} — ${label(t.status)}`;const small=document.createElement('small');small.textContent=t.result||t.assignment;body.append(strong,small);row.append(dot,body);if(t.status==='needs_approval'){const b=document.createElement('button');b.textContent='REVIEW';b.onclick=()=>nav('approvals');row.appendChild(b)}else if(t.status==='needs_connection'){const b=document.createElement('button');b.textContent='CONNECT';b.onclick=()=>nav('connections');row.appendChild(b)}list.prepend(row);agentStatus(t.name,`${label(t.status)} • ${t.result||t.assignment}`)});approvals(r)}
+function decide(n,yes){const r=load(),t=r&&task(r,n);if(!t||t.status!=='needs_approval')return;t.status=yes?'approved':'rejected';t.result+=yes?' Decision approved. No external action was sent automatically.':' Decision not approved. No external action was taken.';t.decidedAt=new Date().toISOString();save(r);render(r);toast(yes?`${n} approved safely.`:`${n} stopped.`)}
+async function reachable(url){try{const x=await fetch(url,{cache:'no-store'});return{ok:x.ok,code:x.status}}catch(_){return{ok:false,code:0}}}
+function assignment(n){return({Partnership:'Review partnership leads and identify the safest next follow-up step.','Social Media':'Check whether content work can start and publishing is approval-gated.','Reader Care':'Check whether real reader messages can be accessed.','Finance & Orders':'Check whether live order and payment records are available.','Aiva Presentation':'Check the presentation workspace for a queued brief.','Grant & Sponsorship':'Check whether live opportunity research can run.',Media:'Check whether media research and outreach can run.',Website:'Run a live self-check of the Command Center page.',Knowledge:'Check whether the Beyond the Tremor Book Brain is reachable.',Events:'Check whether real Calendar event reading is available.','Lead & CRM':'Audit the visible CRM counts and prepare a safe next step.'})[n]||'Check current workspace.'}
+async function evaluate(n){const d=counts();
+ if(n==='Partnership')return d.leads?{status:'needs_approval',result:`Reviewed the CRM summary: ${d.leads} leads, ${d.hot} hot, ${d.follow} already marked for follow-up.`,approval:`Approve preparing a partnership follow-up shortlist from the ${d.hot} hot leads`}:{status:'needs_input',result:'No lead records are currently visible.',approval:''};
+ if(n==='Social Media')return{status:'needs_input',result:'No social publishing connector is configured here. Social Media is ready for a topic or campaign brief; publishing stays behind approval.',approval:''};
+ if(n==='Reader Care')return{status:'needs_connection',result:'Reader Care cannot truthfully read inbox messages from this page yet. A real Gmail read connection is required.',approval:''};
+ if(n==='Finance & Orders')return{status:'needs_connection',result:'No live order or payment data source is available in this browser session. Finance & Orders will not invent totals.',approval:''};
+ if(n==='Aiva Presentation')return{status:'completed',result:'Aiva presentation workspace is ready. No presentation brief is currently queued.',approval:''};
+ if(n==='Grant & Sponsorship')return{status:'needs_connection',result:`CRM context is available (${d.leads} leads), but live grant and sponsorship research is not connected inside this page yet.`,approval:''};
+ if(n==='Media')return{status:'needs_connection',result:'Live media-opportunity research and email outreach are not connected yet, so Media is not inventing opportunities.',approval:''};
+ if(n==='Website'){const x=await reachable('./');return x.ok?{status:'completed',result:`Command Center self-check passed (HTTP ${x.code}).`,approval:''}:{status:'error',result:'Website self-check could not confirm the live page response.',approval:''}}
+ if(n==='Knowledge'){const x=await reachable('book-brain.html?v=24');return x.ok?{status:'completed',result:`Book Brain is reachable (HTTP ${x.code}).`,approval:''}:{status:'error',result:'Book Brain could not be reached from the Command Center.',approval:''}}
+ if(n==='Events')return{status:'needs_connection',result:'The page shows a Calendar connection label, but this browser code has no event-read function. Events will not claim to see meetings until Calendar reading is wired in.',approval:''};
+ if(n==='Lead & CRM')return d.leads?{status:'needs_approval',result:`CRM audit completed: ${d.leads} total, ${d.hot} hot, ${d.follow} marked for follow-up.`,approval:'Approve creating a local follow-up work queue from the current hot leads'}:{status:'needs_input',result:'No CRM leads are currently visible.',approval:''};
+ return{status:'completed',result:'Agent check completed.',approval:''}
+}
+function run(){timers.forEach(clearTimeout);timers=[];const r={id:`run-${Date.now()}`,startedAt:new Date().toISOString(),tasks:A.map(n=>({name:n,assignment:assignment(n),status:'working',result:'',approval:''}))};save(r);render(r);nav('work');toast('Jazz started real checks for all 11 agents.');A.forEach((n,i)=>timers.push(setTimeout(async()=>{const cur=load();if(!cur||cur.id!==r.id)return;try{const out=await evaluate(n),latest=load();if(!latest||latest.id!==r.id)return;const t=task(latest,n);Object.assign(t,out,{finishedAt:new Date().toISOString()});save(latest);render(latest)}catch(e){const latest=load(),t=latest&&task(latest,n);if(!t)return;t.status='error';t.result=`Check failed: ${e?.message||'unknown error'}`;save(latest);render(latest)}},300+i*320)))}
+function install(){if(installed)return;const b=document.querySelector('[data-act="deploy"]');if(!b)return;installed=true;b.addEventListener('click',run);const r=load();if(r)render(r);window.JazzAgentWork={run,state:load,clear:()=>{localStorage.removeItem(RUN);$$('.jazz-agent-task,.jazz-agent-approval').forEach(x=>x.remove())}}}
+window.JazzWhatsAppFallback={configure,disable,heartbeat,status,showDailyReport,showStartupReport:()=>showReport('AUTOMATIC JAZZ REPORT'),queueStartupReportAfterGreeting:()=>showReport('AUTOMATIC JAZZ REPORT')};
+document.addEventListener('DOMContentLoaded',()=>{reliableGreeting();bookBrain();install();setTimeout(()=>{bookBrain();install()},700);const r=document.querySelector('[data-act="report"]');if(r)r.onclick=()=>showReport('AUTOMATIC JAZZ REPORT')});
+['load','pageshow','focus'].forEach(e=>window.addEventListener(e,()=>{reliableGreeting();bookBrain();install();heartbeat();showDailyReport()}));
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){bookBrain();install();heartbeat();showDailyReport()}});
+setInterval(()=>{if(document.visibilityState==='visible'){bookBrain();install();heartbeat();showDailyReport()}},5*60*1000);
 })();
