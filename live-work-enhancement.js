@@ -1,410 +1,101 @@
-/*
-  JAZZ AI — REAL SYSTEM Live Work layer
-  --------------------------------------
-  Truthful rules:
-  - Jazz never labels a prototype as a finished system.
-  - A real build runs through the private Apps Script backend.
-  - The backend generates real app files, creates a GitHub repository,
-    publishes GitHub Pages, and reports real build stages back to Jazz.
-  - Jazz only marks a system LIVE after the backend verifies the HTTPS URL.
-*/
-(function () {
+/* Jazz Book Brain integration + original Live Work loader */
+(function(){
   'use strict';
 
-  var BUILD_URL_KEY = 'jazzRealBuilderUrl';
-  var LEGACY_BACKEND_URL_KEY = 'jazzWhatsAppFallbackUrl';
-  var watchers = {};
+  // Preserve the original real-system behavior.
+  var original=document.createElement('script');
+  original.src='live-work-enhancement-original.js?v=20';
+  document.head.appendChild(original);
 
-  function el(id) { return document.getElementById(id); }
-  function esc(value) {
-    return String(value == null ? '' : value).replace(/[&<>"']/g, function (c) {
-      return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
-    });
+  var brain=null;
+  var brainReady=false;
+
+  function byId(id){return document.getElementById(id)}
+  function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+  function say(t){try{if(typeof window.speak==='function')window.speak(t)}catch(_){}}
+  function note(t){try{if(typeof window.toast==='function')window.toast(t)}catch(_){}}
+
+  function loadBrain(){
+    return fetch('book-brain.json?v=20',{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('Book Brain unavailable');return r.json()}).then(function(d){brain=d;brainReady=true;renderStatus();return d}).catch(function(){brainReady=false;renderStatus();});
   }
 
-  function backendConfig() {
-    var raw = localStorage.getItem(BUILD_URL_KEY) || localStorage.getItem(LEGACY_BACKEND_URL_KEY) || '';
-    if (!raw) return { endpoint: '', key: '' };
-    try {
-      var url = new URL(raw);
-      var key = url.searchParams.get('key') || '';
-      url.searchParams.delete('key');
-      return { endpoint: url.toString(), key: key };
-    } catch (_) {
-      return { endpoint: '', key: '' };
-    }
+  function score(entry,q){
+    var terms=q.toLowerCase().split(/[^a-z0-9₱]+/).filter(function(x){return x.length>2});
+    var hay=[entry.chapter,entry.summary,(entry.themes||[]).join(' '),entry.exact_quote||''].join(' ').toLowerCase();
+    var s=0;terms.forEach(function(t){if(hay.indexOf(t)>=0)s+=1;if((entry.themes||[]).join(' ').toLowerCase().indexOf(t)>=0)s+=2;if((entry.chapter||'').toLowerCase().indexOf(t)>=0)s+=2});
+    return s;
   }
 
-  function builderConfigured() {
-    var cfg = backendConfig();
-    return Boolean(cfg.endpoint && cfg.key);
+  function searchBook(q){
+    if(!brain||!Array.isArray(brain.entries))return [];
+    var ranked=brain.entries.map(function(e){return {e:e,s:score(e,q)}}).sort(function(a,b){return b.s-a.s});
+    var hits=ranked.filter(function(x){return x.s>0}).slice(0,4).map(function(x){return x.e});
+    if(!hits.length)hits=brain.entries.slice(0,3);
+    return hits;
   }
 
-  function configureBuilder(url) {
-    var clean = String(url || '').trim();
-    if (!/^https:\/\/script\.google\.com\/macros\/s\//i.test(clean)) {
-      throw new Error('Use your Apps Script Web App HTTPS URL.');
-    }
-    var parsed = new URL(clean);
-    var key = parsed.searchParams.get('key') || '';
-    if (key.length < 12) throw new Error('The private URL must include ?key=YOUR_PRIVATE_KEY.');
-    localStorage.setItem(BUILD_URL_KEY, clean);
-    return true;
+  function answerBook(q){
+    var hits=searchBook(q);
+    var area=byId('bookBrainResults');
+    if(!area)return;
+    if(!brainReady){area.innerHTML='<div class="empty">Book Brain is still loading. Please try again.</div>';return}
+    area.innerHTML=hits.map(function(e,i){return '<div class="row" style="display:block">'+
+      '<div class="eyebrow">BOOK SOURCE • '+esc(e.pages?('PAGE '+e.pages):'SOURCE')+'</div>'+
+      '<strong>'+esc(e.chapter)+'</strong>'+
+      '<p style="margin:8px 0;color:#ddd;line-height:1.5">'+esc(e.summary)+'</p>'+
+      (e.exact_quote?'<p style="margin:8px 0"><strong>Exact quote:</strong> “'+esc(e.exact_quote)+'”</p>':'')+
+      '<small>Source mode: Beyond the Tremor • '+(e.exact_quote?'quote verified in Book Brain':'summary/paraphrase')+'</small></div>'}).join('');
+    if(hits[0])say('I found this in Beyond the Tremor. '+hits[0].summary);
   }
 
-  function statusBanner(title, detail, live) {
-    return '<div class="row" style="display:block;border:2px solid ' + (live ? '#69e7b4' : '#d9bd7c') + ';background:rgba(217,189,124,.08)">' +
-      '<div class="eyebrow">REAL SYSTEM STATUS</div>' +
-      '<strong style="font-size:1.08rem">' + esc(title) + '</strong>' +
-      '<small style="display:block;margin-top:7px;line-height:1.45">' + esc(detail) + '</small>' +
-      '</div>';
-  }
+  function renderStatus(){var s=byId('bookBrainStatus');if(s)s.textContent=brainReady?'READY • SOURCE LOCK ON':'LOADING BOOK…'}
 
-  function step(label, detail, state) {
-    var done = state === 'done';
-    var working = state === 'working';
-    var cls = done ? 'done' : 'pending';
-    var extra = working ? ' style="opacity:1;border:1px solid rgba(217,189,124,.55)"' : '';
-    return '<div class="row progress-step ' + cls + '"' + extra + '>' +
-      '<span class="mark"' + (working ? ' style="border-color:#d9bd7c;box-shadow:0 0 12px #d9bd7c"' : '') + '></span>' +
-      '<div><strong>' + esc(label) + '</strong><small>' + esc(detail) + '</small></div></div>';
-  }
-
-  function button(id, label) {
-    return '<button id="' + id + '" style="width:100%;min-height:66px;margin-top:12px;border:1px solid #d9bd7c;border-radius:18px;background:#34234f;color:#fff;font-weight:1000;font-size:1rem">' + esc(label) + '</button>';
-  }
-
-  var stageOrder = {
-    QUEUED: 0,
-    GENERATING: 1,
-    CREATING_REPOSITORY: 2,
-    UPLOADING_FILES: 3,
-    ENABLING_PAGES: 4,
-    DEPLOYING: 5,
-    LIVE: 6,
-    ERROR: -1
-  };
-
-  function stageState(system, stageNumber) {
-    var current = stageOrder[String(system.buildStage || '')];
-    if (current == null) return 'pending';
-    if (current === -1) return 'pending';
-    if (current > stageNumber) return 'done';
-    if (current === stageNumber) return 'working';
-    return 'pending';
-  }
-
-  function realWorkView(system) {
-    var connected = builderConfigured();
-    var wl = el('workList');
-    if (!wl || !system) return;
-
-    var live = Boolean(system.live && /^https:\/\//i.test(String(system.live)));
-    var stage = String(system.buildStage || '');
-    var detail = String(system.buildDetail || '');
-    var title = live ? 'REAL SYSTEM LIVE' :
-      (stage === 'ERROR' ? 'BUILD NEEDS ATTENTION' :
-      (stage && stage !== 'QUEUED' ? 'BUILDING REAL SYSTEM' :
-      (connected ? 'READY TO BUILD REAL SYSTEM' : 'REAL SYSTEM BUILDER NOT CONNECTED')));
-    var subtitle = live ? 'Jazz verified the deployed HTTPS system.' :
-      (stage === 'ERROR' ? (detail || 'The real build stopped because an actual step failed.') :
-      (stage && stage !== 'QUEUED' ? (detail || 'Jazz is working through the real build pipeline.') :
-      (connected ? 'Private backend connected. Jazz can create files, GitHub repository and live deployment.' :
-      'Connect the secure Apps Script builder. Jazz will not substitute a prototype.')));
-
-    wl.innerHTML =
-      statusBanner(title, subtitle, live) +
-      step('Understanding request', system.idea || system.name || 'Approved system request', 'done') +
-      step('Planning system', 'Specification approved and saved', 'done') +
-      step('Generating real application files', stage ? (stage === 'GENERATING' ? detail : 'Generated by the private AI builder') : 'Not started', stageState(system, 1)) +
-      step('Creating GitHub repository', stage === 'CREATING_REPOSITORY' ? detail : 'A real repository is created for this system', stageState(system, 2)) +
-      step('Uploading real application files', stage === 'UPLOADING_FILES' ? detail : 'Actual deployable files are written to GitHub', stageState(system, 3)) +
-      step('Enabling GitHub Pages', stage === 'ENABLING_PAGES' ? detail : 'Public HTTPS deployment is configured', stageState(system, 4)) +
-      step('Verifying deployment', stage === 'DEPLOYING' ? detail : (live ? 'Verified reachable HTTPS URL' : 'Jazz waits for the real page to become reachable'), live ? 'done' : stageState(system, 5));
-
-    if (live) {
-      wl.innerHTML += button('jazzOpenRealSystem', 'OPEN REAL SYSTEM');
-    } else if (!connected) {
-      wl.innerHTML += button('jazzConnectRealBuilder', 'CONNECT REAL SYSTEM BUILDER');
-    } else if (stage && stage !== 'ERROR' && stage !== 'LIVE') {
-      wl.innerHTML += button('jazzCheckRealBuild', 'CHECK REAL BUILD STATUS');
-    } else {
-      wl.innerHTML += button('jazzBuildRealSystem', stage === 'ERROR' ? 'RETRY REAL SYSTEM BUILD' : 'BUILD REAL SYSTEM NOW');
+  function buildUI(){
+    if(byId('bookBrainBtn'))return;
+    var actions=document.querySelector('.actions');
+    if(actions){
+      var btn=document.createElement('button');btn.id='bookBrainBtn';btn.className='action';btn.innerHTML='<i>🧠</i>BOOK BRAIN';btn.onclick=openBrain;actions.appendChild(btn);
     }
 
-    var open = el('jazzOpenRealSystem');
-    if (open) open.onclick = function () { window.open(system.live, '_blank', 'noopener'); };
-
-    var build = el('jazzBuildRealSystem');
-    if (build) {
-      build.onclick = function () {
-        build.disabled = true;
-        build.textContent = 'STARTING REAL BUILD…';
-        system.status = 'BUILDING — real system';
-        system.buildStage = 'QUEUED';
-        system.buildDetail = 'Sending the approved specification to the private builder.';
-        system.updated = new Date().toLocaleDateString();
-        if (typeof saveSystems === 'function') saveSystems();
-        realWorkView(system);
-
-        window.JazzRealSystemBuilder.start(system, callbacksFor(system));
-      };
-    }
-
-    var check = el('jazzCheckRealBuild');
-    if (check) check.onclick = function () { window.JazzRealSystemBuilder.watch(system, callbacksFor(system)); };
-
-    var connect = el('jazzConnectRealBuilder');
-    if (connect) {
-      connect.onclick = function () {
-        var existing = localStorage.getItem(LEGACY_BACKEND_URL_KEY) || '';
-        if (existing) {
-          try {
-            configureBuilder(existing);
-            if (typeof toast === 'function') toast('Using your existing private Apps Script backend for real builds.');
-            realWorkView(system);
-            return;
-          } catch (_) {}
-        }
-        if (typeof nav === 'function') nav('connections');
-        if (typeof toast === 'function') toast('Add your private Apps Script Web App URL to connect the Real System Builder.');
-      };
-    }
+    var overlay=document.createElement('div');
+    overlay.id='bookBrainOverlay';overlay.className='talkbox';
+    overlay.innerHTML='<div class="sheet" style="max-height:90vh;overflow:auto">'+
+      '<div class="eyebrow">BEYOND THE TREMOR • KNOWLEDGE BRAIN</div><h2>🧠 Ask My Book</h2>'+
+      '<p class="honest">Jazz searches the source-grounded Book Brain first. Direct quotes are never invented.</p>'+
+      '<div class="badge" id="bookBrainStatus">LOADING BOOK…</div>'+
+      '<div class="input" style="grid-template-columns:minmax(0,1fr) 68px;margin-top:14px">'+
+      '<input id="bookBrainQuery" placeholder="Ask about faith, DBS, family, resilience…" aria-label="Ask Beyond the Tremor">'+
+      '<button id="bookBrainAsk">ASK</button></div>'+
+      '<div class="quick"><button data-book-q="What does my book say about resilience?">Resilience</button><button data-book-q="What does my book say about my mother and family?">Family</button><button data-book-q="What does my book say about DBS?">DBS</button><button data-book-q="What does my book say about advocacy and purpose?">Purpose</button></div>'+
+      '<div class="list" id="bookBrainResults"><div class="empty">Ask a question about your book.</div></div>'+
+      '<button class="close" id="bookBrainClose">CLOSE</button></div>';
+    document.body.appendChild(overlay);
+    byId('bookBrainClose').onclick=closeBrain;
+    byId('bookBrainAsk').onclick=function(){answerBook((byId('bookBrainQuery').value||'').trim())};
+    byId('bookBrainQuery').onkeydown=function(e){if(e.key==='Enter')byId('bookBrainAsk').click()};
+    overlay.querySelectorAll('[data-book-q]').forEach(function(b){b.onclick=function(){byId('bookBrainQuery').value=b.getAttribute('data-book-q');answerBook(byId('bookBrainQuery').value)}});
+    renderStatus();
   }
 
-  function callbacksFor(system) {
-    return {
-      onStage: function (stage, detail, data) {
-        system.buildStage = stage;
-        system.buildDetail = detail || '';
-        if (data && data.repo) system.repo = data.repo;
-        system.status = stage === 'ERROR' ? 'BUILD ERROR — needs attention' : 'BUILDING — real system';
-        system.updated = new Date().toLocaleDateString();
-        if (typeof saveSystems === 'function') saveSystems();
-        realWorkView(system);
-        if (typeof toast === 'function' && detail) toast(detail);
-      },
-      onLive: function (url, data) {
-        system.buildStage = 'LIVE';
-        system.buildDetail = 'Deployment verified.';
-        if (data && data.repo) system.repo = data.repo;
-        window.JazzBuildStatus.markLive(system.id, url);
-        realWorkView(system);
-        if (typeof speak === 'function') speak('Your real system is built, deployed, and live.');
-      },
-      onError: function (message) {
-        system.buildStage = 'ERROR';
-        system.buildDetail = message || 'Real system build failed.';
-        system.status = 'BUILD ERROR — needs attention';
-        if (typeof saveSystems === 'function') saveSystems();
-        realWorkView(system);
-        if (typeof toast === 'function') toast(system.buildDetail);
+  function openBrain(){var o=byId('bookBrainOverlay');if(o)o.classList.add('open');var q=byId('bookBrainQuery');if(q)setTimeout(function(){q.focus()},80);note('Beyond the Tremor Book Brain opened.');}
+  function closeBrain(){var o=byId('bookBrainOverlay');if(o)o.classList.remove('open')}
+
+  function looksLikeBookQuestion(q){return /\b(book|beyond the tremor|chapter|what did i write|my story|my memoir|quote|resilience|faith|dbs|parkinson|mother|sister|advocacy)\b/i.test(q)}
+
+  function enhanceTalk(){
+    var send=byId('send'),cmd=byId('command');if(!send||!cmd)return;
+    var oldClick=send.onclick;
+    send.onclick=function(ev){
+      var q=(cmd.value||'').trim();
+      if(q&&looksLikeBookQuestion(q)){
+        if(typeof window.closeTalk==='function')window.closeTalk(); else {var t=byId('talkbox');if(t)t.classList.remove('open')}
+        openBrain();byId('bookBrainQuery').value=q;answerBook(q);cmd.value='';return false;
       }
+      if(typeof oldClick==='function')return oldClick.call(this,ev);
     };
   }
 
-  function safeCallbackName(id) {
-    return '__jazzBuild_' + String(id || 'x').replace(/[^A-Za-z0-9_]/g, '_') + '_' + Date.now();
-  }
-
-  function pollStatus(system, callbacks) {
-    var cfg = backendConfig();
-    if (!cfg.endpoint || !cfg.key) {
-      callbacks.onError('Real System Builder is not connected.');
-      return;
-    }
-    var id = String(system.id || '');
-    if (!id) {
-      callbacks.onError('System ID is missing.');
-      return;
-    }
-
-    clearTimeout(watchers[id]);
-    var cb = safeCallbackName(id);
-    var script = document.createElement('script');
-    var finished = false;
-
-    function cleanup() {
-      if (script.parentNode) script.parentNode.removeChild(script);
-      try { delete window[cb]; } catch (_) { window[cb] = undefined; }
-    }
-
-    window[cb] = function (data) {
-      finished = true;
-      cleanup();
-      data = data || {};
-      if (!data.ok) {
-        callbacks.onError(data.error || 'Could not read real build status.');
-        return;
-      }
-      var stage = String(data.stage || 'QUEUED');
-      var detail = String(data.detail || '');
-      callbacks.onStage(stage, detail, data);
-      if (stage === 'LIVE' && data.url) {
-        callbacks.onLive(String(data.url), data);
-        return;
-      }
-      if (stage === 'ERROR') {
-        callbacks.onError(detail || 'Real build failed.');
-        return;
-      }
-      watchers[id] = setTimeout(function () { pollStatus(system, callbacks); }, 2500);
-    };
-
-    script.onerror = function () {
-      cleanup();
-      if (!finished) watchers[id] = setTimeout(function () { pollStatus(system, callbacks); }, 4000);
-    };
-
-    script.src = cfg.endpoint + (cfg.endpoint.indexOf('?') === -1 ? '?' : '&') +
-      'action=buildStatus&key=' + encodeURIComponent(cfg.key) +
-      '&system_id=' + encodeURIComponent(id) +
-      '&callback=' + encodeURIComponent(cb) + '&_=' + Date.now();
-    document.body.appendChild(script);
-  }
-
-  function submitBuild(system, callbacks) {
-    var cfg = backendConfig();
-    if (!cfg.endpoint || !cfg.key) throw new Error('Real System Builder is not connected.');
-
-    var frame = el('jazzRealBuilderFrame');
-    if (!frame) {
-      frame = document.createElement('iframe');
-      frame.id = 'jazzRealBuilderFrame';
-      frame.name = 'jazzRealBuilderFrame';
-      frame.style.display = 'none';
-      document.body.appendChild(frame);
-    }
-
-    var form = document.createElement('form');
-    form.method = 'POST';
-    form.action = cfg.endpoint;
-    form.target = frame.name;
-    form.style.display = 'none';
-
-    function field(name, value) {
-      var input = document.createElement('input');
-      input.type = 'hidden';
-      input.name = name;
-      input.value = value;
-      form.appendChild(input);
-    }
-
-    field('jazz_action', 'buildSystem');
-    field('key', cfg.key);
-    field('system_json', JSON.stringify({
-      id: system.id,
-      name: system.name || '',
-      idea: system.idea || '',
-      type: system.type || '',
-      spec: system.spec || system.plan || '',
-      raw: system
-    }));
-
-    document.body.appendChild(form);
-    callbacks.onStage('QUEUED', 'Build request sent to the private backend.');
-    form.submit();
-    form.remove();
-    watchers[String(system.id)] = setTimeout(function () { pollStatus(system, callbacks); }, 1200);
-  }
-
-  window.JazzRealSystemBuilder = {
-    isConfigured: builderConfigured,
-    configure: configureBuilder,
-    start: function (system, callbacks) {
-      try { submitBuild(system, callbacks); }
-      catch (err) { callbacks.onError(String(err && err.message ? err.message : err)); }
-    },
-    watch: function (system, callbacks) { pollStatus(system, callbacks); },
-    status: function () { return { configured: builderConfigured() }; }
-  };
-
-  function migrateOldStatuses() {
-    if (typeof systems === 'undefined' || !Array.isArray(systems)) return;
-    var changed = false;
-    systems.forEach(function (s) {
-      if (!s) return;
-      if (s.live) {
-        if (s.status !== 'LIVE — real system deployed') {
-          s.status = 'LIVE — real system deployed';
-          s.buildStage = 'LIVE';
-          changed = true;
-        }
-        return;
-      }
-      if (/prototype|approved|ready to build|build approved/i.test(String(s.status || ''))) {
-        s.status = 'NOT CREATED — real builder required';
-        delete s.prototype;
-        changed = true;
-      }
-    });
-    if (changed && typeof saveSystems === 'function') saveSystems();
-  }
-
-  function enhancedApprove(event) {
-    if (typeof draftSystem === 'undefined' || !draftSystem) return;
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation();
-
-    draftSystem.status = builderConfigured() ? 'READY — real system build' : 'NOT CREATED — real builder required';
-    draftSystem.live = draftSystem.live || '';
-    draftSystem.updated = new Date().toLocaleDateString();
-    systems.unshift(draftSystem);
-    if (typeof saveSystems === 'function') saveSystems();
-
-    var system = draftSystem;
-    draftSystem = null;
-
-    var spec = el('specBox');
-    if (spec) {
-      spec.innerHTML = '<div class="spec"><div class="eyebrow">PLAN APPROVED</div><h3>REAL SYSTEM ONLY</h3><p>Jazz will build the actual working system through the private backend and GitHub.</p><p class="honest">It will only be marked LIVE after the deployed HTTPS page is verified.</p></div>';
-    }
-
-    if (typeof nav === 'function') nav('work');
-    realWorkView(system);
-    if (typeof speak === 'function') speak('Approved. Jazz will build a real deployed system only.');
-  }
-
-  document.addEventListener('click', function (event) {
-    var target = event.target && event.target.closest ? event.target.closest('#approveBuild') : null;
-    if (!target) return;
-    enhancedApprove(event);
-  }, true);
-
-  window.systemNotice = function (i) {
-    var s = systems[i];
-    if (s && s.live) {
-      window.open(s.live, '_blank', 'noopener');
-      return;
-    }
-    if (s) realWorkView(s);
-    if (typeof nav === 'function') nav('work');
-    if (s && /BUILDING/i.test(String(s.status || '')) && builderConfigured()) {
-      window.JazzRealSystemBuilder.watch(s, callbacksFor(s));
-    }
-  };
-
-  window.JazzBuildStatus = {
-    isCreated: function (system) { return Boolean(system && /^https:\/\//i.test(String(system.live || ''))); },
-    markLive: function (systemId, url) {
-      var clean = String(url || '').trim();
-      if (!/^https:\/\//i.test(clean)) throw new Error('A verified HTTPS deployment URL is required.');
-      var found = systems.find(function (s) { return String(s.id) === String(systemId); });
-      if (!found) throw new Error('System not found.');
-      found.live = clean;
-      found.status = 'LIVE — real system deployed';
-      found.buildStage = 'LIVE';
-      found.updated = new Date().toLocaleDateString();
-      if (typeof saveSystems === 'function') saveSystems();
-      if (typeof toast === 'function') toast('REAL SYSTEM VERIFIED LIVE.');
-      return found;
-    },
-    show: function (systemId) {
-      var found = systems.find(function (s) { return String(s.id) === String(systemId); });
-      if (found) realWorkView(found);
-    }
-  };
-
-  migrateOldStatuses();
+  function init(){buildUI();loadBrain();setTimeout(enhanceTalk,150)}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+  window.JazzBookBrain={open:openBrain,search:searchBook,answer:answerBook,get ready(){return brainReady}};
 })();
