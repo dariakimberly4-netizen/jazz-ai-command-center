@@ -73,7 +73,7 @@
   <div class="toast" id="toast" role="status"></div>
   <input id="musicFile" type="file" accept="audio/*" hidden><audio id="music" loop></audio>
   <input id="kimaraFaceFile" type="file" accept="image/*" hidden>
-  <script src="whatsapp-fallback-client.js?v=27"></script>
+  <script src="whatsapp-fallback-client.js?v=28"></script>
   <script>
     const names=['Partnership','Social Media','Reader Care','Finance & Orders','Aiva Presentation','Grant & Sponsorship','Media','Website','Knowledge','Events','Lead & CRM']; let leadData=[],leadFilter='All',builderType='APP',draftSystem=null,systems=JSON.parse(localStorage.getItem('jazzSystems')||'[]');
     const icons=['↗','♥','✉','₱','▰','★','◉','⌘','◇','◫','♙']; let timers=[],speaking=false;
@@ -135,7 +135,7 @@
     $('#orb').onclick=start;$('#stopBtn').onclick=()=>{timers.forEach(clearTimeout);speechSynthesis?.cancel();$('#music').pause();closeTalk();toast('All activity stopped safely.')};
     $('#motionBtn').onclick=e=>{document.body.classList.toggle('reduce');const on=document.body.classList.contains('reduce');e.currentTarget.textContent=on?'Motion Off':'Reduce';localStorage.setItem('jazzReduce',on)};if(localStorage.getItem('jazzReduce')==='true'){$('body').classList.add('reduce');$('#motionBtn').textContent='Motion Off'}
     $$('nav button').forEach(b=>b.onclick=()=>nav(b.dataset.view));$$('[data-nav]').forEach(b=>b.onclick=()=>nav(b.dataset.nav));
-    $$('[data-act]').forEach(b=>b.onclick=()=>{const a=b.dataset.act;if(a==='talk')openTalk();else if(a==='deploy')deploy();else if(a==='email')nav('connections');else if(a==='report')work('Prepare my clear daily report');else if(a==='next'){toast('Next action: connect Gmail, Drive, Calendar, or WhatsApp.');speak('Your next action is to open Connections and choose the service you want Jazz to use.')}else if(a==='errands')assign('Errands')});
+    $$('[data-act]').forEach(b=>b.onclick=()=>{const a=b.dataset.act;if(a==='talk')openTalk();else if(a==='deploy'){if(window.JazzDeployAll&&typeof window.JazzDeployAll.start==='function')window.JazzDeployAll.start();else deploy();}else if(a==='email')nav('connections');else if(a==='report')work('Prepare my clear daily report');else if(a==='next'){toast('Next action: connect Gmail, Drive, Calendar, or WhatsApp.');speak('Your next action is to open Connections and choose the service you want Jazz to use.')}else if(a==='errands')assign('Errands')});
     $('#closeTalk').onclick=closeTalk;$('#send').onclick=submit;$('#voiceMic').onclick=()=>{const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return toast('Voice input is not supported here. Press Windows plus H.');const r=new SR();r.lang='fil-PH';r.interimResults=false;r.onstart=()=>{toast('Listening… Speak now.');$('#voiceMic').textContent='●'};r.onresult=e=>{$('#command').value=e.results[0][0].transcript;toast('I heard you. Press SEND.');$('#voiceMic').textContent='🎙'};r.onerror=()=>{toast('I could not hear that. Tap the microphone and try again.');$('#voiceMic').textContent='🎙'};r.onend=()=>{$('#voiceMic').textContent='🎙'};r.start()};$('#command').onkeydown=e=>{if(e.key==='Enter')submit()};$$('.quick button').forEach(b=>b.onclick=()=>{$('#command').value=b.textContent;submit()});
     $$('[data-connect]').forEach(b=>b.onclick=()=>toast(`${b.dataset.connect} needs secure Google setup. Jazz will not claim it is connected.`));
     function refreshWhatsAppFallback(){const status=$('#waFallbackStatus'),button=$('#waFallbackBtn');if(!status||!button)return;if(!window.JazzWhatsAppFallback){status.textContent='Setup files not loaded';button.textContent='SET UP';return}const s=window.JazzWhatsAppFallback.status();if(s.configured){status.textContent='Ready on this device • fallback check around 9:15 AM';button.textContent='MANAGE'}else{status.textContent='Setup required • fallback check around 9:15 AM';button.textContent='SET UP'}}
@@ -157,9 +157,9 @@
     $('#musicBtn').onclick=()=>{const m=$('#music');if(m.src){if(m.paused){m.play();$('#musicBtn').textContent='❚❚'}else{m.pause();$('#musicBtn').textContent='♫'}}else $('#musicFile').click()};
     $('#musicFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const m=$('#music');m.src=URL.createObjectURL(f);m.volume=.4;m.play();$('#musicBtn').textContent='❚❚';toast('Your legally provided music is playing.')};
   </script>
-  <script src="jazz-agent-engine.js?v=27" data-jazz-agent-engine></script>
-  <script src="jazz-apps-script-agents.js?v=27" data-jazz-apps-script-agents></script>
-  <script src="whatsapp-fallback.js?v=27"></script>
-  <script src="live-work-enhancement.js?v=27"></script>
+  <script src="jazz-agent-engine.js?v=28" data-jazz-agent-engine></script>
+  <script src="jazz-apps-script-agents.js?v=28" data-jazz-apps-script-agents></script>
+  <script src="whatsapp-fallback.js?v=28"></script>
+  <script src="live-work-enhancement.js?v=28"></script>
 </body>
 </html>

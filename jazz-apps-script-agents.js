@@ -66,7 +66,7 @@
     const i = rows.findIndex(x => x.id === task.id);
     if (i >= 0) rows[i] = task; else rows.unshift(task);
     writeTasks(rows);
-    try { window.JazzAgentEngine?.render(task); } catch (_) {}
+    try { if (!(window.JazzDeployAll?.state?.().active)) window.JazzAgentEngine?.render(task); } catch (_) {}
     return task;
   }
 
