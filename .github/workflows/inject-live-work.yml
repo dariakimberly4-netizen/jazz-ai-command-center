@@ -17,27 +17,47 @@ jobs:
       - name: Check out Jazz
         uses: actions/checkout@v4
 
-      - name: Force fresh agent scripts
+      - name: Fix real deploy and force fresh scripts
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
+
+          # 1) Make the original DEPLOY AGENTS click path call the real deploy engine.
           p = Path('index.html')
           s = p.read_text(encoding='utf-8')
+          old_handler = "else if(a==='deploy')deploy();"
+          new_handler = "else if(a==='deploy'){if(window.JazzDeployAll&&typeof window.JazzDeployAll.start==='function')window.JazzDeployAll.start();else deploy();}"
+          if old_handler in s:
+              s = s.replace(old_handler, new_handler)
+
+          # 2) Force Chrome to load the corrected files.
           replacements = {
-              'whatsapp-fallback-client.js?v=26': 'whatsapp-fallback-client.js?v=27',
-              'jazz-agent-engine.js?v=26': 'jazz-agent-engine.js?v=27',
-              'jazz-apps-script-agents.js?v=26': 'jazz-apps-script-agents.js?v=27',
-              'whatsapp-fallback.js?v=26': 'whatsapp-fallback.js?v=27',
-              'live-work-enhancement.js?v=26': 'live-work-enhancement.js?v=27',
+              'whatsapp-fallback-client.js?v=27': 'whatsapp-fallback-client.js?v=28',
+              'jazz-agent-engine.js?v=27': 'jazz-agent-engine.js?v=28',
+              'jazz-apps-script-agents.js?v=27': 'jazz-apps-script-agents.js?v=28',
+              'whatsapp-fallback.js?v=27': 'whatsapp-fallback.js?v=28',
+              'live-work-enhancement.js?v=27': 'live-work-enhancement.js?v=28',
           }
           for old, new in replacements.items():
               s = s.replace(old, new)
           p.write_text(s, encoding='utf-8')
-          PY
-          grep -nE 'whatsapp-fallback-client|jazz-agent-engine|jazz-apps-script-agents|whatsapp-fallback.js|live-work-enhancement.js' index.html | tail -n 10
 
-      - name: Commit cache-bust
+          # 3) While Deploy All is active, individual task updates must not overwrite
+          #    the 11-agent Live Work board with one task card.
+          bridge = Path('jazz-apps-script-agents.js')
+          b = bridge.read_text(encoding='utf-8')
+          old_render = "try { window.JazzAgentEngine?.render(task); } catch (_) {}"
+          new_render = "try { if (!(window.JazzDeployAll?.state?.().active)) window.JazzAgentEngine?.render(task); } catch (_) {}"
+          b = b.replace(old_render, new_render)
+          bridge.write_text(b, encoding='utf-8')
+          PY
+
+          grep -n "a==='deploy'" index.html | tail -n 2
+          grep -nE 'jazz-agent-engine|jazz-apps-script-agents|whatsapp-fallback.js|live-work-enhancement.js' index.html | tail -n 10
+          grep -n "JazzDeployAll.*state" jazz-apps-script-agents.js | head -n 5
+
+      - name: Commit deploy fix
         shell: bash
         run: |
           if git diff --quiet; then
@@ -46,6 +66,6 @@ jobs:
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add index.html
-          git commit -m 'Force latest Jazz agent scripts v27'
+          git add index.html jazz-apps-script-agents.js
+          git commit -m 'Fix real Deploy Agents board v28'
           git push
