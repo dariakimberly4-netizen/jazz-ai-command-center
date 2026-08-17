@@ -17,7 +17,7 @@ jobs:
       - name: Check out Jazz
         uses: actions/checkout@v4
 
-      - name: Fix real deploy and force fresh scripts
+      - name: Add direct Live Work deploy and force fresh scripts
         shell: bash
         run: |
           python - <<'PY'
@@ -25,38 +25,49 @@ jobs:
 
           p = Path('index.html')
           s = p.read_text(encoding='utf-8')
+
+          # Keep the main DEPLOY AGENTS button wired to the real deploy engine.
           old_handler = "else if(a==='deploy')deploy();"
           new_handler = "else if(a==='deploy'){if(window.JazzDeployAll&&typeof window.JazzDeployAll.start==='function')window.JazzDeployAll.start();else deploy();}"
-          if old_handler in s:
-              s = s.replace(old_handler, new_handler)
+          s = s.replace(old_handler, new_handler)
 
-          replacements = {
-              'whatsapp-fallback-client.js?v=28': 'whatsapp-fallback-client.js?v=29',
-              'jazz-agent-engine.js?v=28': 'jazz-agent-engine.js?v=29',
-              'jazz-apps-script-agents.js?v=28': 'jazz-apps-script-agents.js?v=29',
-              'whatsapp-fallback.js?v=28': 'whatsapp-fallback.js?v=29',
-              'live-work-enhancement.js?v=28': 'live-work-enhancement.js?v=29',
-          }
-          for old, new in replacements.items():
+          # Add a direct, unmistakable deploy control inside Live Work.
+          old_work = '<section class="view" id="work"><div class="panel"><div class="eyebrow">AUDITABLE ACTIVITY</div><h2>Live Work</h2><p class="honest">Jazz shows only actions you start. Connected-service results will appear here after authorization—never invented.</p><div class="list" id="workList">'
+          new_work = '<section class="view" id="work"><div class="panel"><div class="eyebrow">AUDITABLE ACTIVITY</div><h2>Live Work</h2><p class="honest">Jazz shows only actions you start. Connected-service results will appear here after authorization—never invented.</p><button class="builder-go" id="runAllAgentsLive" type="button" onclick="if(window.JazzDeployAll&&typeof window.JazzDeployAll.start===\'function\'){window.JazzDeployAll.start()}else if(window.toast){toast(\'Agent deploy module is still loading. Please wait a moment and try again.\')}">▶ RUN ALL 11 AGENTS</button><div class="badge" style="margin:10px 0 14px">DEPLOY MODULE v30</div><div class="list" id="workList">'
+          if 'id="runAllAgentsLive"' not in s:
+              s = s.replace(old_work, new_work)
+
+          # Force the corrected files to load fresh in Chrome.
+          for old, new in {
+              'whatsapp-fallback-client.js?v=29': 'whatsapp-fallback-client.js?v=30',
+              'jazz-agent-engine.js?v=29': 'jazz-agent-engine.js?v=30',
+              'jazz-apps-script-agents.js?v=29': 'jazz-apps-script-agents.js?v=30',
+              'whatsapp-fallback.js?v=29': 'whatsapp-fallback.js?v=30',
+              'live-work-enhancement.js?v=29': 'live-work-enhancement.js?v=30',
+          }.items():
               s = s.replace(old, new)
+
           p.write_text(s, encoding='utf-8')
 
+          # Prevent task updates from repainting one task over Deploy All.
           bridge = Path('jazz-apps-script-agents.js')
           b = bridge.read_text(encoding='utf-8')
-          replacements_bridge = {
-              "try { window.JazzAgentEngine?.render(task); } catch (_) {}": "try { if (!(window.JazzDeployAll?.state?.().active)) window.JazzAgentEngine?.render(task); } catch (_) {}",
-              "try { window.JazzAgentEngine?.render(rows[i]); } catch (_) {}": "try { if (!(window.JazzDeployAll?.state?.().active)) window.JazzAgentEngine?.render(rows[i]); } catch (_) {}",
-          }
-          for old, new in replacements_bridge.items():
-              b = b.replace(old, new)
+          b = b.replace(
+              "try { window.JazzAgentEngine?.render(task); } catch (_) {}",
+              "try { if (!(window.JazzDeployAll?.state?.().active)) window.JazzAgentEngine?.render(task); } catch (_) {}"
+          )
+          b = b.replace(
+              "try { window.JazzAgentEngine?.render(rows[i]); } catch (_) {}",
+              "try { if (!(window.JazzDeployAll?.state?.().active)) window.JazzAgentEngine?.render(rows[i]); } catch (_) {}"
+          )
           bridge.write_text(b, encoding='utf-8')
           PY
 
+          grep -n "runAllAgentsLive" index.html | head -n 2
           grep -n "a==='deploy'" index.html | tail -n 2
           grep -nE 'jazz-agent-engine|jazz-apps-script-agents|whatsapp-fallback.js|live-work-enhancement.js' index.html | tail -n 10
-          grep -n "JazzDeployAll.*state" jazz-apps-script-agents.js | head -n 10
 
-      - name: Commit deploy fix
+      - name: Commit v30 Live Work fix
         shell: bash
         run: |
           if git diff --quiet; then
@@ -66,5 +77,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add index.html jazz-apps-script-agents.js
-          git commit -m 'Finish real Deploy Agents board v29'
+          git commit -m 'Add direct Run All 11 Agents control v30'
           git push
