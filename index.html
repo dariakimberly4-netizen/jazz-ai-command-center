@@ -73,7 +73,7 @@
   <div class="toast" id="toast" role="status"></div>
   <input id="musicFile" type="file" accept="audio/*" hidden><audio id="music" loop></audio>
   <input id="kimaraFaceFile" type="file" accept="image/*" hidden>
-  <script src="whatsapp-fallback-client.js?v=28"></script>
+  <script src="whatsapp-fallback-client.js?v=29"></script>
   <script>
     const names=['Partnership','Social Media','Reader Care','Finance & Orders','Aiva Presentation','Grant & Sponsorship','Media','Website','Knowledge','Events','Lead & CRM']; let leadData=[],leadFilter='All',builderType='APP',draftSystem=null,systems=JSON.parse(localStorage.getItem('jazzSystems')||'[]');
     const icons=['↗','♥','✉','₱','▰','★','◉','⌘','◇','◫','♙']; let timers=[],speaking=false;
@@ -157,9 +157,9 @@
     $('#musicBtn').onclick=()=>{const m=$('#music');if(m.src){if(m.paused){m.play();$('#musicBtn').textContent='❚❚'}else{m.pause();$('#musicBtn').textContent='♫'}}else $('#musicFile').click()};
     $('#musicFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const m=$('#music');m.src=URL.createObjectURL(f);m.volume=.4;m.play();$('#musicBtn').textContent='❚❚';toast('Your legally provided music is playing.')};
   </script>
-  <script src="jazz-agent-engine.js?v=28" data-jazz-agent-engine></script>
-  <script src="jazz-apps-script-agents.js?v=28" data-jazz-apps-script-agents></script>
-  <script src="whatsapp-fallback.js?v=28"></script>
-  <script src="live-work-enhancement.js?v=28"></script>
+  <script src="jazz-agent-engine.js?v=29" data-jazz-agent-engine></script>
+  <script src="jazz-apps-script-agents.js?v=29" data-jazz-apps-script-agents></script>
+  <script src="whatsapp-fallback.js?v=29"></script>
+  <script src="live-work-enhancement.js?v=29"></script>
 </body>
 </html>

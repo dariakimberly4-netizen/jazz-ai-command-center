@@ -76,7 +76,7 @@
     if (i < 0) return null;
     rows[i] = Object.assign({}, rows[i], patch, { updatedAt: nowIso() });
     writeTasks(rows);
-    try { window.JazzAgentEngine?.render(rows[i]); } catch (_) {}
+    try { if (!(window.JazzDeployAll?.state?.().active)) window.JazzAgentEngine?.render(rows[i]); } catch (_) {}
     return rows[i];
   }
 
