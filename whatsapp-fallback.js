@@ -92,9 +92,9 @@ console.info('Jazz connected services use the private Google Apps Script backend
   }
   function bind(){
     const b=document.querySelector('[data-act="deploy"]');
-    if(!b||b.dataset.realDeployAll==='1')return;
+    if(!b)return;
     b.dataset.realDeployAll='1';
-    b.addEventListener('click',start,true);
+    b.onclick=start;
     const stop=$('#stopBtn');
     if(stop&&!stop.dataset.realDeployStop){
       stop.dataset.realDeployStop='1';
@@ -102,7 +102,8 @@ console.info('Jazz connected services use the private Google Apps Script backend
     }
   }
   window.JazzDeployAll={start,show:()=>{active=true;go('work');renderBoard()},state:()=>({active,ids:Object.assign({},ids)})};
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{setTimeout(bind,0);setTimeout(bind,900)});
-  else{setTimeout(bind,0);setTimeout(bind,900)}
+  bind();
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{bind();setTimeout(bind,250);setTimeout(bind,900)});
+  else{setTimeout(bind,0);setTimeout(bind,250);setTimeout(bind,900)}
   window.addEventListener('pageshow',()=>setTimeout(bind,100));
 })();
