@@ -73,7 +73,7 @@
   <div class="toast" id="toast" role="status"></div>
   <input id="musicFile" type="file" accept="audio/*" hidden><audio id="music" loop></audio>
   <input id="kimaraFaceFile" type="file" accept="image/*" hidden>
-  <script src="whatsapp-fallback-client.js?v=30"></script>
+  <script src="whatsapp-fallback-client.js?v=31"></script>
   <script>
     const names=['Partnership','Social Media','Reader Care','Finance & Orders','Aiva Presentation','Grant & Sponsorship','Media','Website','Knowledge','Events','Lead & CRM']; let leadData=[],leadFilter='All',builderType='APP',draftSystem=null,systems=JSON.parse(localStorage.getItem('jazzSystems')||'[]');
     const icons=['↗','♥','✉','₱','▰','★','◉','⌘','◇','◫','♙']; let timers=[],speaking=false;
@@ -81,15 +81,20 @@
     const agents=$('#agents'), list=$('#agentList');
     names.forEach((n,i)=>{const open=()=>n==='Lead & CRM'?nav('crm'):assign(n);const b=document.createElement('button');b.className='agent';b.style.setProperty('--a',(i*360/12)+'deg');b.dataset.icon=icons[i];b.innerHTML=n.replace(' ','<br>');b.onclick=open;agents.appendChild(b);const r=document.createElement('div');r.className='row';r.innerHTML=`<span class="dot"></span><div><strong>${n}</strong><small>${n==='Lead & CRM'?'179 leads imported':'Ready for instructions'}</small></div><button>OPEN</button>`;r.querySelector('button').onclick=open;list.appendChild(r)});
     const k=document.createElement('button');k.className='agent kimara deployed';k.style.setProperty('--a','330deg');k.dataset.icon='✦';k.innerHTML='KIMARA<br><small>AMBASSADOR</small>';k.onclick=()=>nav('kimaraVault');agents.appendChild(k);
-    function period(){const h=new Date().getHours();return h<12?'morning':h<18?'afternoon':'evening'}
+    function period(){
+      const parts=new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Manila',hour:'2-digit',hour12:false}).formatToParts(new Date());
+      const h=Number(parts.find(x=>x.type==='hour')?.value||0);
+      return h<12?'morning':h<18?'afternoon':'evening'
+    }
     function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),3000)}
     let voiceRetryTimer;
-    function speak(t){
-      if(!('speechSynthesis' in window))return;
+    function speak(t,done){
+      const complete=()=>{if(typeof done==='function')done()};
+      if(!('speechSynthesis' in window)){complete();return}
       const vs=speechSynthesis.getVoices();
       if(!vs.length){
         clearTimeout(voiceRetryTimer);
-        const retry=()=>{speechSynthesis.onvoiceschanged=null;clearTimeout(voiceRetryTimer);speak(t)};
+        const retry=()=>{speechSynthesis.onvoiceschanged=null;clearTimeout(voiceRetryTimer);speak(t,done)};
         speechSynthesis.onvoiceschanged=retry;
         voiceRetryTimer=setTimeout(retry,700);
         return;
@@ -98,16 +103,18 @@
         ||vs.find(v=>/Blessica|Rosa/i.test(v.name))
         ||vs.find(v=>/fil-PH|en-PH/i.test(v.lang)&&!/Angelo|male/i.test(v.name))
         ||vs.find(v=>/female|Samantha|Zira/i.test(v.name));
-      if(!female){toast('A female voice is not installed in this browser.');return}
+      if(!female){toast('A Filipina female voice is not installed in this browser.');complete();return}
       speechSynthesis.cancel();
       const u=new SpeechSynthesisUtterance(t);
       u.voice=female;u.lang=female.lang||'fil-PH';u.rate=.9;u.pitch=1.04;
       u.onstart=()=>{speaking=true;if(!$('#music').paused)$('#music').volume=.12};
-      u.onend=()=>{speaking=false;if(!$('#music').paused)$('#music').volume=.4};
+      let finished=false;
+      const finish=()=>{if(finished)return;finished=true;speaking=false;if(!$('#music').paused)$('#music').volume=.4;complete()};
+      u.onend=finish;u.onerror=finish;
       speechSynthesis.speak(u)
     }
-    function deploy(){timers.forEach(clearTimeout);$$('.agent:not(.kimara)').forEach((a,i)=>timers.push(setTimeout(()=>a.classList.add('deployed'),i*170)));toast('Deploying 11 agents.');speak('Deploying all eleven agents. They are ready for your instructions.')}
-    function start(){const home=$('#home');if(home.classList.contains('deploying')||home.classList.contains('started'))return;home.classList.add('deploying');const t='Good morning, Kimmy. Deploying the 11 agents now.';toast(t);speak(t);$('#orb span').textContent='DEPLOYING AGENTS';deploy();const delay=document.body.classList.contains('reduce')?0:(names.length*170+450);setTimeout(()=>{home.classList.remove('deploying');home.classList.add('agents-ready','started');document.body.classList.add('command-open');$('#orb span').textContent='COMMAND CENTER';scrollTo({top:0,behavior:'auto'});toast('The 11 agents and Kimara are ready.')},delay)}
+    function deploy(announce=true){timers.forEach(clearTimeout);$$('.agent:not(.kimara)').forEach((a,i)=>timers.push(setTimeout(()=>a.classList.add('deployed'),i*170)));toast('Deploying 11 agents.');if(announce)speak('Deploying all eleven agents. They are ready for your instructions.')}
+    function start(){const home=$('#home');if(home.classList.contains('deploying')||home.classList.contains('started'))return;home.classList.add('deploying');const t=`Good ${period()}, Kimmy.`;toast(t);speak(t,()=>window.JazzWhatsAppFallback?.queueStartupReportAfterGreeting?.());$('#orb span').textContent='DEPLOYING AGENTS';deploy(false);const delay=document.body.classList.contains('reduce')?0:(names.length*170+450);setTimeout(()=>{home.classList.remove('deploying');home.classList.add('agents-ready','started');document.body.classList.add('command-open');$('#orb span').textContent='COMMAND CENTER';scrollTo({top:0,behavior:'auto'});toast('The 11 agents and Kimara are ready.')},delay)}
     function nav(id){$$('.view').forEach(v=>v.classList.toggle('active',v.id===id));$$('nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===id));scrollTo({top:0,behavior:document.body.classList.contains('reduce')?'auto':'smooth'})}
     function assign(n){openTalk();$('#command').value=`Ask ${n} to `;$('#command').focus();toast(`${n} is ready.`)}
     function openTalk(){const m=$('#music');if(!m.paused)m.volume=.12;$('#talkbox').classList.add('open')}
